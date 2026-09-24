@@ -116,7 +116,8 @@ Public input schemas must be strict about length and size (max array lengths, ma
 ## 7. Database
 
 - Models are PascalCase singular. Tables and columns are `snake_case` via `@@map` / `@map`.
-- Ids: `String @id @default(uuid()) @db.Uuid`.
+- Ids: `String @id @default(uuid()) @db.Uuid`. Timestamps: `DateTime @db.Timestamptz(3)`.
+- Strings have a database length where it matters (`@db.VarChar(n)`), matching the zod `.max()`.
 - Business tables have `createdAt`, `updatedAt`, `deletedAt`, `createdById`, `updatedById`.
 - **Soft delete only.** Repositories spread `notDeleted` into every read and use `softDeleteData(actorId)`
   instead of `delete`. History and child records use `onDelete: Restrict`.
@@ -136,7 +137,8 @@ Each module ships `tests/<name>.test.ts` covering, for every endpoint:
 3. missing token (401) and missing permission (403),
 4. not found (404) and business rule violations (409 / 400 with the module's error code).
 
-Use `resetDatabase()` in `beforeEach` and the helpers in `tests/helpers`. Tests run against a real
+Use `resetDatabase()` in `beforeEach` and the helpers in `tests/helpers` (`signInAs('SUPER_ADMIN')`
+returns a session with ready-to-use `auth` headers; `createUser()` creates users directly). Tests run against a real
 PostgreSQL database named in `.env.test`.
 
 ## 9. API documentation

@@ -1,6 +1,6 @@
 // Database schema. Conventions (see docs/MODULE_STANDARD.md#database):
 //  - Models: PascalCase singular. Tables/columns: snake_case via @@map / @map.
-//  - Ids: String @id @default(uuid()) @db.Uuid
+//  - Ids: String @id @default(uuid()) @db.Uuid; timestamps: DateTime @db.Timestamptz(3)
 //  - Business tables carry createdAt, updatedAt, deletedAt (soft delete),
 //    createdById, updatedById.
 //  - Every foreign key and every column used for filtering/sorting is indexed.
@@ -15,4 +15,59 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+}
+
+enum Role {
+  SUPER_ADMIN
+  SALES_MANAGER
+}
+
+model User {
+  id                  String    @id @default(uuid()) @db.Uuid
+  name                String    @db.VarChar(100)
+  /// Always stored lowercased. Stays reserved after a soft delete (restore instead of recreating).
+  email               String    @unique @db.VarChar(254)
+  passwordHash        String    @map("password_hash")
+  role                Role
+  isActive            Boolean   @default(true) @map("is_active")
+  mustChangePassword  Boolean   @default(false) @map("must_change_password")
+  /// Incremented to revoke every access and refresh token of the user at once.
+  tokenVersion        Int       @default(0) @map("token_version")
+  failedLoginAttempts Int       @default(0) @map("failed_login_attempts")
+  lockedUntil         DateTime? @map("locked_until") @db.Timestamptz(3)
+  lastLoginAt         DateTime? @map("last_login_at") @db.Timestamptz(3)
+  passwordChangedAt   DateTime? @map("password_changed_at") @db.Timestamptz(3)
+  createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt           DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt           DateTime? @map("deleted_at") @db.Timestamptz(3)
+  createdById         String?   @map("created_by_id") @db.Uuid
+  updatedById         String?   @map("updated_by_id") @db.Uuid
+
+  refreshTokens RefreshToken[]
+
+  @@index([role])
+  @@index([deletedAt, createdAt])
+  @@map("users")
+}
+
+/// Opaque, rotating refresh tokens. Only the SHA-256 hash is stored.
+/// A family is one sign-in session; reuse of a rotated token revokes the whole family.
+model RefreshToken {
+  id           String    @id @default(uuid()) @db.Uuid
+  userId       String    @map("user_id") @db.Uuid
+  familyId     String    @map("family_id") @db.Uuid
+  tokenHash    String    @unique @map("token_hash") @db.Char(64)
+  tokenVersion Int       @map("token_version")
+  expiresAt    DateTime  @map("expires_at") @db.Timestamptz(3)
+  revokedAt    DateTime? @map("revoked_at") @db.Timestamptz(3)
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  createdByIp  String?   @map("created_by_ip") @db.VarChar(64)
+  userAgent    String?   @map("user_agent") @db.VarChar(512)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([familyId])
+  @@index([expiresAt])
+  @@map("refresh_tokens")
 }

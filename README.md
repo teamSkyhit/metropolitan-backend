@@ -21,8 +21,20 @@ cp .env.example .env
 # set JWT_ACCESS_SECRET (the command to generate one is in .env.example)
 npm ci                  # also installs git hooks and generates the Prisma client
 npm run db:migrate      # create / update the local database
+npm run db:seed         # create the first Super Admin (set SEED_SUPER_ADMIN_* in .env first)
 npm run dev             # http://localhost:5000
 ```
+
+## Users and sign-in
+
+- There is no public registration. The first **Super Admin** is created once with `npm run db:seed`
+  (idempotent; reads `SEED_SUPER_ADMIN_EMAIL` / `SEED_SUPER_ADMIN_PASSWORD`).
+- The Super Admin creates **Sales Managers** via `POST /api/v1/users` with a temporary password.
+  They must change it at first sign-in (`POST /api/v1/auth/change-password`).
+- Sign in with `POST /api/v1/auth/login` and send `Authorization: Bearer <accessToken>`.
+  Access tokens last 15 minutes. Renew with `POST /api/v1/auth/refresh`: each refresh token works
+  **once**, so the frontend must not send refresh requests in parallel.
+- Deactivating, deleting or resetting a user signs them out everywhere immediately.
 
 - API base: `http://localhost:5000/api/v1`
 - Swagger UI: `http://localhost:5000/api/docs` (raw OpenAPI: `/api/docs.json`)
@@ -42,6 +54,7 @@ npm run dev             # http://localhost:5000
 | `npm run gen:module -- <name>` | Scaffold a new module following the standard              |
 | `npm run db:migrate`           | Create/apply migrations in development                    |
 | `npm run db:deploy`            | Apply migrations (staging / production)                   |
+| `npm run db:seed`              | Create the first Super Admin (idempotent)                 |
 | `npm run db:studio`            | Prisma Studio                                             |
 
 ## Tests

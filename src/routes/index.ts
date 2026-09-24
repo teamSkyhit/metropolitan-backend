@@ -1,5 +1,8 @@
 import { Router } from 'express';
+import { registerAuthUserResolver } from '../middleware';
+import { authModule } from '../modules/auth';
 import { healthModule } from '../modules/health';
+import { usersModule, usersService } from '../modules/users';
 import type { AppModule } from '../shared/module';
 
 /**
@@ -8,8 +11,13 @@ import type { AppModule } from '../shared/module';
  */
 export const modules: readonly AppModule[] = [
   healthModule,
+  authModule,
+  usersModule,
   // @generator:modules
 ];
+
+// `authenticate()` looks users up through the users module.
+registerAuthUserResolver(usersService.resolveAuthState);
 
 /** Builds the /api/v1 router from the module list. */
 export function createApiRouter(): Router {
