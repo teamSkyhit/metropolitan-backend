@@ -13,6 +13,11 @@ export const Permission = {
   USERS_LOOKUP: 'users:lookup',
   USERS_READ: 'users:read',
   USERS_MANAGE: 'users:manage',
+  ENQUIRIES_READ: 'enquiries:read',
+  ENQUIRIES_UPDATE: 'enquiries:update',
+  ENQUIRIES_ASSIGN: 'enquiries:assign',
+  ENQUIRIES_FOLLOW_UP: 'enquiries:follow-up',
+  ENQUIRIES_DELETE: 'enquiries:delete',
   // @generator:permissions (new module permissions are inserted above this line)
 } as const;
 
@@ -26,7 +31,13 @@ const ALL_PERMISSIONS = Object.values(Permission) as Permission[];
  */
 export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
   [Role.SUPER_ADMIN]: ALL_PERMISSIONS,
-  [Role.SALES_MANAGER]: [Permission.USERS_LOOKUP],
+  [Role.SALES_MANAGER]: [
+    Permission.USERS_LOOKUP,
+    Permission.ENQUIRIES_READ,
+    Permission.ENQUIRIES_UPDATE,
+    Permission.ENQUIRIES_ASSIGN,
+    Permission.ENQUIRIES_FOLLOW_UP,
+  ],
 };
 
 const permissionSets = new Map<Role, ReadonlySet<Permission>>(

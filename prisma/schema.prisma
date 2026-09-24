@@ -43,7 +43,10 @@ model User {
   createdById         String?   @map("created_by_id") @db.Uuid
   updatedById         String?   @map("updated_by_id") @db.Uuid
 
-  refreshTokens RefreshToken[]
+  refreshTokens        RefreshToken[]
+  assignedEnquiries    Enquiry[]             @relation("EnquiryAssignee")
+  enquiryFollowUps     EnquiryFollowUp[]
+  enquiryStatusChanges EnquiryStatusChange[]
 
   @@index([role])
   @@index([deletedAt, createdAt])
@@ -70,4 +73,101 @@ model RefreshToken {
   @@index([familyId])
   @@index([expiresAt])
   @@map("refresh_tokens")
+}
+
+enum EnquiryStatus {
+  NEW
+  ASSIGNED
+  CONTACTED
+  QUOTATION_SENT
+  NEGOTIATION
+  CLOSED_WON
+  CLOSED_LOST
+}
+
+/// A product enquiry, submitted from the public website.
+model Enquiry {
+  id           String        @id @default(uuid()) @db.Uuid
+  name         String        @db.VarChar(100)
+  company      String?       @db.VarChar(150)
+  email        String        @db.VarChar(254)
+  mobile       String        @db.VarChar(20)
+  city         String?       @db.VarChar(100)
+  state        String?       @db.VarChar(100)
+  country      String?       @db.VarChar(100)
+  message      String?       @db.VarChar(2000)
+  status       EnquiryStatus @default(NEW)
+  salesNotes   String?       @map("sales_notes") @db.VarChar(5000)
+  assignedToId String?       @map("assigned_to_id") @db.Uuid
+  assignedAt   DateTime?     @map("assigned_at") @db.Timestamptz(3)
+  closedAt     DateTime?     @map("closed_at") @db.Timestamptz(3)
+  sourceIp     String?       @map("source_ip") @db.VarChar(64)
+  createdAt    DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt    DateTime?     @map("deleted_at") @db.Timestamptz(3)
+  createdById  String?       @map("created_by_id") @db.Uuid
+  updatedById  String?       @map("updated_by_id") @db.Uuid
+
+  assignedTo    User?                 @relation("EnquiryAssignee", fields: [assignedToId], references: [id], onDelete: Restrict)
+  lineItems     EnquiryLineItem[]
+  followUps     EnquiryFollowUp[]
+  statusChanges EnquiryStatusChange[]
+
+  @@index([status])
+  @@index([assignedToId])
+  @@index([deletedAt, createdAt])
+  @@index([email])
+  @@map("enquiries")
+}
+
+model EnquiryLineItem {
+  id          String   @id @default(uuid()) @db.Uuid
+  enquiryId   String   @map("enquiry_id") @db.Uuid
+  productId   String   @map("product_id") @db.VarChar(100)
+  sku         String   @db.VarChar(100)
+  productName String?  @map("product_name") @db.VarChar(200)
+  quantity    Int
+  /// Order in which the customer listed the items (0-based).
+  position    Int      @default(0)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  enquiry Enquiry @relation(fields: [enquiryId], references: [id], onDelete: Restrict)
+
+  @@index([enquiryId])
+  @@index([sku])
+  @@map("enquiry_line_items")
+}
+
+/// Append-only log of sales activity on an enquiry.
+model EnquiryFollowUp {
+  id        String   @id @default(uuid()) @db.Uuid
+  enquiryId String   @map("enquiry_id") @db.Uuid
+  authorId  String   @map("author_id") @db.Uuid
+  note      String   @db.VarChar(2000)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  enquiry Enquiry @relation(fields: [enquiryId], references: [id], onDelete: Restrict)
+  author  User    @relation(fields: [authorId], references: [id], onDelete: Restrict)
+
+  @@index([enquiryId, createdAt])
+  @@index([authorId])
+  @@map("enquiry_follow_ups")
+}
+
+/// Append-only audit trail of status changes.
+model EnquiryStatusChange {
+  id          String         @id @default(uuid()) @db.Uuid
+  enquiryId   String         @map("enquiry_id") @db.Uuid
+  fromStatus  EnquiryStatus? @map("from_status")
+  toStatus    EnquiryStatus  @map("to_status")
+  changedById String?        @map("changed_by_id") @db.Uuid
+  note        String?        @db.VarChar(1000)
+  createdAt   DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  enquiry   Enquiry @relation(fields: [enquiryId], references: [id], onDelete: Restrict)
+  changedBy User?   @relation(fields: [changedById], references: [id], onDelete: Restrict)
+
+  @@index([enquiryId, createdAt])
+  @@index([changedById])
+  @@map("enquiry_status_changes")
 }
