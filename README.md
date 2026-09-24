@@ -57,6 +57,30 @@ npm run dev             # http://localhost:5000
 | `npm run db:seed`              | Create the first Super Admin (idempotent)                 |
 | `npm run db:studio`            | Prisma Studio                                             |
 
+## Modules
+
+| Module    | CRM endpoints (`/api/v1`)                                 | Public endpoints (`/api/v1/public`) |
+| --------- | --------------------------------------------------------- | ----------------------------------- |
+| health    | `GET /health`, `GET /health/ready`                        | n/a                                 |
+| auth      | login, refresh, logout, logout-all, me, change-password   | n/a                                 |
+| users     | CRUD for Sales Managers, lookup                           | n/a                                 |
+| enquiries | list, detail, notes, status, assignee, follow-ups, delete | `POST /enquiries`                   |
+
+Full request/response contracts: Swagger UI at `/api/docs`.
+
+### Website integration (public enquiry form)
+
+1. Render the captcha widget of the configured provider using its **site key**. For reCAPTCHA v3 or
+   Turnstile, use the action name `enquiry_submit`.
+2. `POST /api/v1/public/enquiries` with the token in the `X-Captcha-Token` header.
+3. The website origin must be listed in `PUBLIC_CORS_ORIGINS`.
+
+### Enquiry workflow
+
+`NEW → (assign) → ASSIGNED → CONTACTED → QUOTATION_SENT ⇄ NEGOTIATION → CLOSED_WON | CLOSED_LOST`.
+Any open status can move to `CLOSED_LOST`. A lost enquiry can be reopened to `CONTACTED`; a won
+one is final. Every change is recorded in the status history with who made it.
+
 ## Tests
 
 Tests run against a real PostgreSQL database named in `.env.test`

@@ -48,18 +48,24 @@ export function buildPaginationMeta({ page, limit }: PaginationQuery, total: num
 
 export const sortOrderSchema = z.enum(['asc', 'desc']).default('desc');
 
+/** `from` / `to` calendar dates (YYYY-MM-DD, interpreted in UTC, both inclusive). */
+export const dateRangeFields = {
+  from: z.iso.date().optional().meta({ description: 'Start date (YYYY-MM-DD, UTC, inclusive)' }),
+  to: z.iso.date().optional().meta({ description: 'End date (YYYY-MM-DD, UTC, inclusive)' }),
+};
+
 /**
- * `from` / `to` calendar dates (YYYY-MM-DD, interpreted in UTC, both inclusive).
+ * Adds the `from <= to` check to any object schema containing `dateRangeFields`.
+ * Apply it last: `withDateRangeCheck(paginationQuerySchema.extend({ ...dateRangeFields, ... }))`.
  */
-export const dateRangeQuerySchema = z
-  .object({
-    from: z.iso.date().optional().meta({ description: 'Start date (YYYY-MM-DD, UTC, inclusive)' }),
-    to: z.iso.date().optional().meta({ description: 'End date (YYYY-MM-DD, UTC, inclusive)' }),
-  })
-  .refine((range) => !range.from || !range.to || range.from <= range.to, {
+export function withDateRangeCheck<T extends z.ZodType<{ from?: string; to?: string }>>(schema: T): T {
+  return schema.refine((range) => !range.from || !range.to || range.from <= range.to, {
     message: '`from` must be on or before `to`',
     path: ['from'],
   });
+}
+
+export const dateRangeQuerySchema = withDateRangeCheck(z.object(dateRangeFields));
 
 export function toDateRangeFilter(range: {
   from?: string;

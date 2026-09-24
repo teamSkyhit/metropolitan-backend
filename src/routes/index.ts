@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { registerAuthUserResolver } from '../middleware';
 import { authModule } from '../modules/auth';
+import { enquiriesModule } from '../modules/enquiries';
 import { healthModule } from '../modules/health';
 import { usersModule, usersService } from '../modules/users';
 import type { AppModule } from '../shared/module';
@@ -13,6 +14,7 @@ export const modules: readonly AppModule[] = [
   healthModule,
   authModule,
   usersModule,
+  enquiriesModule,
   // @generator:modules
 ];
 
