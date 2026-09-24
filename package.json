@@ -23,7 +23,8 @@
     "db:deploy": "prisma migrate deploy",
     "db:studio": "prisma studio",
     "start:migrate": "prisma migrate deploy && node dist/server.js",
-    "check": "npm run lint && npm run format:check && npm run typecheck && npm test"
+    "check": "npm run lint && npm run format:check && npm run typecheck && npm test",
+    "db:seed": "tsx prisma/seed.ts"
   },
   "keywords": [
     "crm",
@@ -38,6 +39,7 @@
   "dependencies": {
     "@asteasolutions/zod-to-openapi": "^9.1.0",
     "@prisma/client": "~6.19.3",
+    "bcryptjs": "^3.0.3",
     "cors": "^2.8.6",
     "dotenv": "^16.6.1",
     "express": "^5.2.1",

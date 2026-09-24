@@ -56,6 +56,8 @@ const ERROR_DESCRIPTIONS: Record<number, string> = {
   403: 'Not allowed',
   404: 'Not found',
   409: 'Conflict',
+  413: 'Payload too large',
+  423: 'Account temporarily locked',
   429: 'Rate limit exceeded',
   503: 'Dependency unavailable',
 };

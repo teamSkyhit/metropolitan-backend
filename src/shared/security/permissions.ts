@@ -9,6 +9,10 @@ import { Role } from './roles';
  * Naming: '<module>:<action>' (lowercase, kebab-case module name).
  */
 export const Permission = {
+  /** Minimal user directory (id, name, role) for pickers such as "assign to". */
+  USERS_LOOKUP: 'users:lookup',
+  USERS_READ: 'users:read',
+  USERS_MANAGE: 'users:manage',
   // @generator:permissions (new module permissions are inserted above this line)
 } as const;
 
@@ -22,7 +26,7 @@ const ALL_PERMISSIONS = Object.values(Permission) as Permission[];
  */
 export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
   [Role.SUPER_ADMIN]: ALL_PERMISSIONS,
-  [Role.SALES_MANAGER]: [],
+  [Role.SALES_MANAGER]: [Permission.USERS_LOOKUP],
 };
 
 const permissionSets = new Map<Role, ReadonlySet<Permission>>(
