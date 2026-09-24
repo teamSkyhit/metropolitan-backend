@@ -1,0 +1,6 @@
+# Changes to shared foundations need a review from the platform owners.
+# Replace the placeholder with real GitHub usernames or a team, e.g. @teamSkyhit/backend-leads
+# /src/shared/      @OWNER
+# /src/middleware/  @OWNER
+# /src/config/      @OWNER
+# /prisma/          @OWNER

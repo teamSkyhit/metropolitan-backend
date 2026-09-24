@@ -1,136 +1,72 @@
-# Metro Industrial CRM - Backend API
+# Metro Industrial CRM: Backend API
 
-Backend REST API for Metro Industrial CRM built with Node.js, Express, TypeScript, PostgreSQL, and Prisma ORM.
+REST API for the Metro Industrial CRM and the public Metro website.
+Node.js 22 · Express 5 · TypeScript · PostgreSQL · Prisma · zod
 
----
+| Document                                           | What it covers                                      |
+| -------------------------------------------------- | --------------------------------------------------- |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)       | Stack, layout, request pipeline, environments       |
+| [docs/MODULE_STANDARD.md](docs/MODULE_STANDARD.md) | How every module must be built (read before coding) |
+| [CONTRIBUTING.md](CONTRIBUTING.md)                 | Branches, commits, pull requests, releases          |
 
-## 🛠️ Tech Stack
+## Prerequisites
 
-- **Runtime**: Node.js
-- **Framework**: Express.js
-- **Language**: TypeScript
-- **Database**: PostgreSQL
-- **ORM**: Prisma ORM
-- **API Documentation**: Swagger / OpenAPI (`swagger-ui-express`)
-- **Security & Utilities**: Helmet, CORS, dotenv
+- Node.js 22.12 or newer
+- PostgreSQL 16 (local install or `docker compose up postgres`)
 
----
-
-## 📁 Project Structure
-
-```text
-metro-industrial-crm-backend/
-├── prisma/
-│   └── schema.prisma         # Prisma schema and datasource definition
-├── src/
-│   ├── config/
-│   │   ├── database.ts       # Prisma Client instance & connection verifier
-│   │   ├── env.ts            # Typed environment variables
-│   │   └── swagger.ts        # OpenAPI / Swagger UI configuration
-│   ├── middleware/
-│   │   └── error.middleware.ts # 404 & global error handling
-│   ├── modules/
-│   │   └── health/
-│   │       ├── health.controller.ts # Health check controller (API & DB status)
-│   │       └── health.routes.ts     # Health module route definitions
-│   ├── routes/
-│   │   └── index.ts          # Central v1 route aggregator (/api/v1)
-│   ├── app.ts                # Express app setup & middleware stack
-│   └── server.ts             # Application entrypoint & HTTP server
-├── tests/                    # Unit and integration tests
-├── .env.example              # Environment variables template
-├── package.json              # Project dependencies and npm scripts
-├── tsconfig.json             # TypeScript compiler configuration
-└── README.md                 # Project documentation
-```
-
----
-
-## ⚙️ Environment Setup
-
-1. Copy the example environment file:
-   ```bash
-   cp .env.example .env
-   ```
-
-2. Configure the required environment variables in `.env`:
-   ```env
-   # Server Configuration
-   PORT=5000
-   NODE_ENV=development
-
-   # Database Configuration (PostgreSQL with Prisma)
-   DATABASE_URL="postgresql://postgres:postgres@localhost:5432/metro_crm?schema=public"
-   ```
-
----
-
-## 🗄️ Database Setup
-
-1. Ensure a PostgreSQL instance is running and accessible using the `DATABASE_URL` specified in your `.env` file.
-2. Generate the Prisma Client:
-   ```bash
-   npm run prisma:generate
-   ```
-3. Run migrations to sync the schema (when migrations are added):
-   ```bash
-   npm run prisma:migrate
-   ```
-
----
-
-## 🚀 Running the Project
-
-### 1. Install Dependencies
-```bash
-npm install
-```
-
-### 2. Run in Development Mode
-```bash
-npm run dev
-```
-
-### 3. Build for Production
-```bash
-npm run build
-```
-
-### 4. Run Production Build
-```bash
-npm start
-```
-
----
-
-## 🐳 Docker Deployment
-
-To build and run both the backend and PostgreSQL database using Docker Compose:
+## Getting started
 
 ```bash
-# Start all services with build in detached mode
-docker compose up --build -d
-
-# View service logs
-docker compose logs -f
-
-# Stop all services
-docker compose down
+cp .env.example .env
+# set JWT_ACCESS_SECRET (the command to generate one is in .env.example)
+npm ci                  # also installs git hooks and generates the Prisma client
+npm run db:migrate      # create / update the local database
+npm run dev             # http://localhost:5000
 ```
 
----
+- API base: `http://localhost:5000/api/v1`
+- Swagger UI: `http://localhost:5000/api/docs` (raw OpenAPI: `/api/docs.json`)
+- Health: `GET /api/v1/health` (liveness), `GET /api/v1/health/ready` (database check)
 
-## 🌐 API Endpoints & Documentation
+## Scripts
 
-- **Base URL**: `http://localhost:5000/api/v1`
-- **Health Check API**: [http://localhost:5000/api/v1/health](http://localhost:5000/api/v1/health)
-  - Method: `GET`
-  - Response:
-    ```json
-    {
-      "success": true,
-      "message": "Metro CRM API is running",
-      "database": "connected"
-    }
-    ```
-- **Interactive Swagger Documentation**: [http://localhost:5000/api/docs](http://localhost:5000/api/docs)
+| Command                        | Description                                               |
+| ------------------------------ | --------------------------------------------------------- |
+| `npm run dev`                  | Start with reload                                         |
+| `npm run build` / `npm start`  | Compile to `dist/` / run the compiled build               |
+| `npm run check`                | Lint + format check + typecheck + tests (run before a PR) |
+| `npm test`                     | Test suite (needs PostgreSQL, see below)                  |
+| `npm run test:coverage`        | Tests with a coverage report                              |
+| `npm run lint` / `lint:fix`    | ESLint, including architecture rules                      |
+| `npm run format`               | Prettier                                                  |
+| `npm run gen:module -- <name>` | Scaffold a new module following the standard              |
+| `npm run db:migrate`           | Create/apply migrations in development                    |
+| `npm run db:deploy`            | Apply migrations (staging / production)                   |
+| `npm run db:studio`            | Prisma Studio                                             |
+
+## Tests
+
+Tests run against a real PostgreSQL database named in `.env.test`
+(`metro_crm_test` on `localhost:5432`, user/password `postgres`). The test run applies the migrations
+automatically. The database name must contain `_test`, because tests empty its tables.
+
+## API conventions
+
+```jsonc
+// success
+{ "success": true, "data": { ... }, "meta": { "pagination": { ... } } }
+// error
+{ "success": false, "error": { "code": "VALIDATION_ERROR", "message": "...", "details": [ ... ], "requestId": "..." } }
+```
+
+- CRM endpoints: `/api/v1/<module>`, bearer token required.
+- Public website endpoints: `/api/v1/public/<module>`, rate limited, captcha token in `X-Captcha-Token`.
+- Every response carries an `X-Request-Id` header. Quote it when reporting a problem.
+
+## Docker
+
+```bash
+docker compose up --build
+```
+
+The image applies pending migrations on start (`npm run start:migrate`).

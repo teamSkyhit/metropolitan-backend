@@ -1,8 +1,15 @@
 node_modules
 dist
+coverage
 .git
+.github
+.husky
 .env
+.env.*
+!.env.example
 npm-debug.log
 Dockerfile
 docker-compose.yml
 tests
+docs
+scripts

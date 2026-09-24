@@ -1,32 +1,28 @@
-import express, { Application } from 'express';
-import cors from 'cors';
+import express, { type Express } from 'express';
 import helmet from 'helmet';
-import routes from './routes';
-import { swaggerUiServe, swaggerUiSetup } from './config/swagger';
-import { errorHandler, notFoundHandler } from './middleware/error.middleware';
+import { config } from './config/env';
+import { createDocsRouter } from './config/swagger';
+import { corsMiddleware, errorHandler, notFoundHandler, rateLimiters, requestLogger } from './middleware';
+import { createApiRouter, modules } from './routes';
 
-const app: Application = express();
+export function createApp(): Express {
+  const app = express();
 
-// Security and standard middlewares
-app.use(
-  helmet({
-    contentSecurityPolicy: false, // Allows Swagger UI assets to load without inline restriction conflicts
-  })
-);
-app.use(cors());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+  app.disable('x-powered-by');
+  app.set('trust proxy', config.TRUST_PROXY);
 
-// Swagger Documentation UI
-app.use('/api/docs', swaggerUiServe, swaggerUiSetup);
+  app.use(requestLogger);
+  if (config.apiDocsEnabled) app.use('/api', createDocsRouter(modules));
 
-// API v1 Routes
-app.use('/api/v1', routes);
+  app.use(helmet());
+  app.use(corsMiddleware);
+  app.use(express.json({ limit: config.BODY_LIMIT }));
+  app.use('/api', rateLimiters.global);
 
-// 404 Route Handler
-app.use(notFoundHandler);
+  app.use('/api/v1', createApiRouter());
 
-// Global Error Handler
-app.use(errorHandler);
+  app.use(notFoundHandler);
+  app.use(errorHandler);
 
-export default app;
+  return app;
+}

@@ -1,12 +1,12 @@
-import { Request, Response } from 'express';
-import { checkDatabaseHealth } from '../../config/database';
+import { handle, sendSuccess } from '../../shared/http';
+import { healthService } from './health.service';
 
-export const getHealth = async (_req: Request, res: Response): Promise<void> => {
-  const dbStatus = await checkDatabaseHealth();
+export const healthController = {
+  liveness: handle({}, (_req, res) => {
+    sendSuccess(res, healthService.getLiveness());
+  }),
 
-  res.status(200).json({
-    success: true,
-    message: 'Metro CRM API is running',
-    database: dbStatus,
-  });
+  readiness: handle({}, async (_req, res) => {
+    sendSuccess(res, await healthService.getReadiness());
+  }),
 };

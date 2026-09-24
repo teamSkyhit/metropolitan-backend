@@ -1,42 +1,45 @@
 import { PrismaClient } from '@prisma/client';
+import { logger } from '../shared/logger';
 
+/**
+ * The single Prisma client for the process.
+ *
+ * Only repository files (`*.repository.ts`) may import this. ESLint enforces it.
+ */
 export const prisma = new PrismaClient({
-  log: process.env.NODE_ENV === 'development' ? ['query', 'info', 'warn', 'error'] : ['error'],
+  log: [
+    { emit: 'event', level: 'warn' },
+    { emit: 'event', level: 'error' },
+    { emit: 'event', level: 'query' },
+  ],
 });
 
+prisma.$on('warn', (event) => logger.warn({ target: event.target }, event.message));
+prisma.$on('error', (event) => logger.error({ target: event.target }, event.message));
+prisma.$on('query', (event) =>
+  logger.trace({ durationMs: event.duration, query: event.query }, 'prisma query')
+);
+
 export async function connectDatabase(maxRetries = 5, retryDelayMs = 2000): Promise<void> {
-  let attempt = 0;
-  while (attempt < maxRetries) {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      attempt++;
-      console.log(`🔌 Connecting to PostgreSQL database (attempt ${attempt}/${maxRetries})...`);
       await prisma.$connect();
-      // Execute a lightweight query to verify the connection
       await prisma.$queryRaw`SELECT 1`;
-      console.log('✅ PostgreSQL database connected successfully via Prisma');
+      logger.info('Database connected');
       return;
-    } catch (error) {
-      console.error(
-        `⚠️  Database connection attempt ${attempt} failed:`,
-        error instanceof Error ? error.message : error
+    } catch (err) {
+      logger.warn(
+        { attempt, maxRetries, err: err instanceof Error ? err.message : err },
+        'Database connection failed'
       );
-      if (attempt >= maxRetries) {
-        throw new Error(
-          `Unable to connect to PostgreSQL database after ${maxRetries} attempts: ${
-            error instanceof Error ? error.message : String(error)
-          }`
-        );
+      if (attempt === maxRetries) {
+        throw new Error(`Unable to connect to the database after ${maxRetries} attempts`, { cause: err });
       }
       await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
     }
   }
 }
 
-export async function checkDatabaseHealth(): Promise<'connected' | 'disconnected'> {
-  try {
-    await prisma.$queryRaw`SELECT 1`;
-    return 'connected';
-  } catch {
-    return 'disconnected';
-  }
+export async function disconnectDatabase(): Promise<void> {
+  await prisma.$disconnect();
 }
