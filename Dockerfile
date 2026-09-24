@@ -1,47 +1,35 @@
-# Multi-stage Dockerfile for Metro Industrial CRM Backend
+# syntax=docker/dockerfile:1
 
-# Stage 1: Build stage
-FROM node:20-bookworm-slim AS builder
-
+# ── Build stage ──────────────────────────────────────────────────────────────
+FROM node:22-bookworm-slim AS builder
 WORKDIR /app
+RUN apt-get update -y && apt-get install -y --no-install-recommends openssl && rm -rf /var/lib/apt/lists/*
 
-# Install OpenSSL for Prisma CLI & engine
-RUN apt-get update -y && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
-
-# Copy package definitions and Prisma schema
 COPY package*.json ./
 COPY prisma ./prisma/
+RUN npm ci
 
-# Install all dependencies (including devDependencies for build)
-RUN npm install
-
-# Copy source code and TypeScript config
-COPY tsconfig.json ./
+COPY tsconfig*.json ./
 COPY src ./src/
+RUN npm run build && npm prune --omit=dev
 
-# Generate Prisma Client
-RUN npx prisma generate
-
-# Build TypeScript to JavaScript (dist)
-RUN npm run build
-
-# Stage 2: Production runtime stage
-FROM node:20-bookworm-slim AS runner
-
+# ── Runtime stage ────────────────────────────────────────────────────────────
+FROM node:22-bookworm-slim AS runner
 WORKDIR /app
-
-# Install runtime OpenSSL dependency for Prisma
-RUN apt-get update -y && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
+RUN apt-get update -y && apt-get install -y --no-install-recommends openssl && rm -rf /var/lib/apt/lists/*
 
 ENV NODE_ENV=production
 ENV PORT=5000
 
-# Copy package files, prisma schema, pre-built node_modules and dist from builder
-COPY package*.json ./
-COPY prisma ./prisma/
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/dist ./dist
+COPY --from=builder --chown=node:node /app/package*.json ./
+COPY --from=builder --chown=node:node /app/prisma ./prisma/
+COPY --from=builder --chown=node:node /app/node_modules ./node_modules/
+COPY --from=builder --chown=node:node /app/dist ./dist/
 
+USER node
 EXPOSE 5000
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+  CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||5000)+'/api/v1/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
-CMD ["node", "dist/server.js"]
+# Applies pending migrations, then starts the API.
+CMD ["npm", "run", "start:migrate"]

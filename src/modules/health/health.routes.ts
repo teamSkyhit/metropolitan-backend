@@ -1,8 +1,10 @@
 import { Router } from 'express';
-import { getHealth } from './health.controller';
+import { healthController } from './health.controller';
 
-const router = Router();
+export const healthRouter = Router();
 
-router.get('/', getHealth);
+/** Liveness: the process is up. Never touches dependencies. */
+healthRouter.get('/', healthController.liveness);
 
-export default router;
+/** Readiness: dependencies (database) are reachable. Returns 503 otherwise. */
+healthRouter.get('/ready', healthController.readiness);

@@ -1,66 +1,25 @@
-import { Request, Response } from 'express';
+import { Router } from 'express';
+import helmet from 'helmet';
 import swaggerUi from 'swagger-ui-express';
+import { createRegistry, generateDocument } from '../shared/docs/openapi';
+import type { AppModule } from '../shared/module';
 
-export const swaggerDocument = {
-  openapi: '3.0.0',
-  info: {
-    title: 'Metro Industrial CRM API',
-    version: '1.0.0',
-    description: 'REST API documentation for Metro Industrial CRM Backend',
-    contact: {
-      name: 'Metro CRM Support',
-    },
-  },
-  servers: [
-    {
-      url: '/api/v1',
-      description: 'API v1 Base Path',
-    },
-  ],
-  tags: [
-    {
-      name: 'Health',
-      description: 'System health and status endpoints',
-    },
-  ],
-  paths: {
-    '/health': {
-      get: {
-        tags: ['Health'],
-        summary: 'Check API and Database Health',
-        description: 'Returns health status of the Metro CRM API and PostgreSQL database connectivity',
-        responses: {
-          '200': {
-            description: 'API is running successfully',
-            content: {
-              'application/json': {
-                schema: {
-                  type: 'object',
-                  properties: {
-                    success: {
-                      type: 'boolean',
-                      example: true,
-                    },
-                    message: {
-                      type: 'string',
-                      example: 'Metro CRM API is running',
-                    },
-                    database: {
-                      type: 'string',
-                      example: 'connected',
-                    },
-                  },
-                },
-              },
-            },
-          },
-        },
-      },
-    },
-  },
-};
+/** Builds `/api/docs` (Swagger UI) and `/api/docs.json` from the modules' registered docs. */
+export function createDocsRouter(modules: readonly AppModule[]): Router {
+  const registry = createRegistry();
+  for (const module of modules) module.registerDocs?.(registry);
+  const document = generateDocument(registry);
 
-export const swaggerUiServe = swaggerUi.serve;
-export const swaggerUiSetup = swaggerUi.setup(swaggerDocument, {
-  customSiteTitle: 'Metro CRM API Docs',
-});
+  const router = Router();
+  router.get('/docs.json', (_req, res) => {
+    res.json(document);
+  });
+  router.use(
+    '/docs',
+    // Swagger UI needs inline scripts/styles, so relax CSP for the docs page only.
+    helmet({ contentSecurityPolicy: false }),
+    swaggerUi.serve,
+    swaggerUi.setup(document, { customSiteTitle: 'Metro CRM API Docs' })
+  );
+  return router;
+}

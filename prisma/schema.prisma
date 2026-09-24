@@ -1,3 +1,12 @@
+// Database schema. Conventions (see docs/MODULE_STANDARD.md#database):
+//  - Models: PascalCase singular. Tables/columns: snake_case via @@map / @map.
+//  - Ids: String @id @default(uuid()) @db.Uuid
+//  - Business tables carry createdAt, updatedAt, deletedAt (soft delete),
+//    createdById, updatedById.
+//  - Every foreign key and every column used for filtering/sorting is indexed.
+//  - Never hard delete business data; history relations use onDelete: Restrict.
+// After editing: npm run db:migrate -- --name <what_changed>
+
 generator client {
   provider      = "prisma-client-js"
   binaryTargets = ["native", "debian-openssl-3.0.x"]
