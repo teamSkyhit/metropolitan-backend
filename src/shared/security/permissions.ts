@@ -18,6 +18,10 @@ export const Permission = {
   ENQUIRIES_ASSIGN: 'enquiries:assign',
   ENQUIRIES_FOLLOW_UP: 'enquiries:follow-up',
   ENQUIRIES_DELETE: 'enquiries:delete',
+  BRANDS_READ: 'brands:read',
+  BRANDS_CREATE: 'brands:create',
+  BRANDS_UPDATE: 'brands:update',
+  BRANDS_DELETE: 'brands:delete',
   // @generator:permissions (new module permissions are inserted above this line)
 } as const;
 
@@ -37,6 +41,7 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     Permission.ENQUIRIES_UPDATE,
     Permission.ENQUIRIES_ASSIGN,
     Permission.ENQUIRIES_FOLLOW_UP,
+    Permission.BRANDS_READ,
   ],
 };
 
