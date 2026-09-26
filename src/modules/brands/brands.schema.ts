@@ -6,11 +6,25 @@ export const BrandsErrorCode = {
   SLUG_TAKEN: 'BRANDS_SLUG_TAKEN',
   NAME_BELONGS_TO_DELETED_BRAND: 'BRANDS_NAME_BELONGS_TO_DELETED_BRAND',
   SLUG_BELONGS_TO_DELETED_BRAND: 'BRANDS_SLUG_BELONGS_TO_DELETED_BRAND',
+  NOT_DELETED: 'BRANDS_NOT_DELETED',
 } as const;
+
+export type BrandsErrorCode = (typeof BrandsErrorCode)[keyof typeof BrandsErrorCode];
 
 const slugRegex = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
-/** Response shape. Never return raw Prisma rows: map them in the service. */
+const mediaUrlSchema = z
+  .string()
+  .trim()
+  .max(500, 'URL cannot exceed 500 characters')
+  .refine(
+    (val) => /^https?:\/\//.test(val) || val.startsWith('/'),
+    'Must be a valid HTTP(S) URL or relative path'
+  )
+  .nullable()
+  .optional();
+
+/** Admin response shape. Never return raw Prisma rows: map them in the service. */
 export const brandSchema = z
   .object({
     id: z.uuid(),
@@ -18,6 +32,7 @@ export const brandSchema = z
     slug: z.string(),
     description: z.string().nullable(),
     logoUrl: z.string().nullable(),
+    bannerUrl: z.string().nullable(),
     isActive: z.boolean(),
     sortOrder: z.number().int(),
     createdAt: z.iso.datetime(),
@@ -25,7 +40,17 @@ export const brandSchema = z
   })
   .meta({ id: 'Brand' });
 
-export const brandsSchema = brandSchema;
+/** Public website DTO: excludes internal audit fields and inactive states. */
+export const publicBrandSchema = z
+  .object({
+    id: z.uuid(),
+    name: z.string(),
+    slug: z.string(),
+    description: z.string().nullable(),
+    logoUrl: z.string().nullable(),
+    bannerUrl: z.string().nullable(),
+  })
+  .meta({ id: 'PublicBrand' });
 
 export const createBrandBodySchema = z
   .object({
@@ -34,22 +59,18 @@ export const createBrandBodySchema = z
       .string()
       .trim()
       .toLowerCase()
-      .min(1, 'Slug is required')
+      .min(1, 'Slug cannot be empty')
       .max(120, 'Slug cannot exceed 120 characters')
-      .regex(slugRegex, 'Slug may only contain lowercase letters, numbers, and hyphens (e.g. brand-name)'),
+      .regex(slugRegex, 'Slug may only contain lowercase letters, numbers, and hyphens (e.g. brand-name)')
+      .optional(),
     description: z
       .string()
       .trim()
       .max(2000, 'Description cannot exceed 2000 characters')
       .nullable()
       .optional(),
-    logoUrl: z
-      .string()
-      .trim()
-      .url('Logo URL must be a valid URL')
-      .max(500, 'Logo URL cannot exceed 500 characters')
-      .nullable()
-      .optional(),
+    logoUrl: mediaUrlSchema,
+    bannerUrl: mediaUrlSchema,
     isActive: z.boolean().default(true),
     sortOrder: z.number().int().min(0).max(1_000_000).default(0),
   })
@@ -77,13 +98,8 @@ export const updateBrandBodySchema = z
       .max(2000, 'Description cannot exceed 2000 characters')
       .nullable()
       .optional(),
-    logoUrl: z
-      .string()
-      .trim()
-      .url('Logo URL must be a valid URL')
-      .max(500, 'Logo URL cannot exceed 500 characters')
-      .nullable()
-      .optional(),
+    logoUrl: mediaUrlSchema,
+    bannerUrl: mediaUrlSchema,
     isActive: z.boolean().optional(),
     sortOrder: z.number().int().min(0).max(1_000_000).optional(),
   })
@@ -102,7 +118,7 @@ export const listBrandsQuerySchema = paginationQuerySchema.extend({
 });
 
 export type BrandDto = z.infer<typeof brandSchema>;
-export type BrandsDto = BrandDto;
+export type PublicBrandDto = z.infer<typeof publicBrandSchema>;
 export type CreateBrandBody = z.infer<typeof createBrandBodySchema>;
 export type UpdateBrandBody = z.infer<typeof updateBrandBodySchema>;
 export type ListBrandsQuery = z.infer<typeof listBrandsQuerySchema>;

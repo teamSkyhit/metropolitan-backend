@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { Prisma } from '@prisma/client';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { BrandsErrorCode } from '../src/modules/brands/brands.schema';
 import { api } from './helpers/app';
 import { signInAs, type Session } from './helpers/auth';
@@ -19,9 +20,30 @@ const sampleBrand = {
   slug: 'schneider-electric',
   description: 'Global specialist in energy management and automation',
   logoUrl: 'https://example.com/logos/schneider.png',
+  bannerUrl: 'https://example.com/banners/schneider.png',
   isActive: true,
   sortOrder: 10,
 };
+
+// Test buffers for upload validation
+const samplePng = Buffer.from([
+  0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+]);
+const sampleJpg = Buffer.from([
+  0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01, 0x01, 0x00, 0x00, 0x01,
+]);
+const sampleWebp = Buffer.concat([
+  Buffer.from('RIFF'),
+  Buffer.alloc(4),
+  Buffer.from('WEBP'),
+  Buffer.from('VP8 '),
+]);
+const sampleSvg = Buffer.from(
+  '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><circle cx="50" cy="50" r="40"/></svg>'
+);
+const sampleText = Buffer.from('This is a plain text file masquerading as an image');
+const oversizedLogo = Buffer.concat([samplePng, Buffer.alloc(2.5 * 1024 * 1024)]);
+const oversizedBanner = Buffer.concat([samplePng, Buffer.alloc(5.5 * 1024 * 1024)]);
 
 describe('Brands Access Control & Authentication', () => {
   it('rejects unauthenticated requests on all brand endpoints with 401', async () => {
@@ -31,6 +53,7 @@ describe('Brands Access Control & Authentication', () => {
     await api().get(`/api/v1/brands/${id}`).expect(401);
     await api().patch(`/api/v1/brands/${id}`).send({ name: 'New' }).expect(401);
     await api().delete(`/api/v1/brands/${id}`).expect(401);
+    await api().post(`/api/v1/brands/${id}/restore`).expect(401);
   });
 
   it('allows Sales Managers to read brands', async () => {
@@ -43,19 +66,109 @@ describe('Brands Access Control & Authentication', () => {
     expect(getRes.body.data.id).toBe(created.body.data.id);
   });
 
-  it('forbids Sales Managers from creating, updating, or deleting brands with 403', async () => {
-    const created = await api().post('/api/v1/brands').set(admin.auth).send(sampleBrand).expect(201);
+  it('allows Sales Managers to create, update, delete, and restore brands', async () => {
+    const created = await api()
+      .post('/api/v1/brands')
+      .set(sales.auth)
+      .send({ name: 'Siemens', slug: 'siemens' })
+      .expect(201);
     const id = created.body.data.id;
 
-    await api().post('/api/v1/brands').set(sales.auth).send({ name: 'Siemens', slug: 'siemens' }).expect(403);
+    await api().patch(`/api/v1/brands/${id}`).set(sales.auth).send({ name: 'Siemens Updated' }).expect(200);
 
+    await api().delete(`/api/v1/brands/${id}`).set(sales.auth).expect(204);
+
+    const restored = await api().post(`/api/v1/brands/${id}/restore`).set(sales.auth).expect(200);
+    expect(restored.body.data.id).toBe(id);
+  });
+});
+
+describe('Public Brand APIs', () => {
+  beforeEach(async () => {
+    // 1. Active brand 1
     await api()
-      .patch(`/api/v1/brands/${id}`)
-      .set(sales.auth)
-      .send({ name: 'Schneider Electric Updated' })
-      .expect(403);
+      .post('/api/v1/brands')
+      .set(admin.auth)
+      .send({
+        name: 'Siemens',
+        slug: 'siemens',
+        sortOrder: 2,
+        isActive: true,
+        bannerUrl: 'https://example.com/siemens.png',
+      })
+      .expect(201);
+    // 2. Active brand 2 (sortOrder 1 -> should appear first)
+    await api()
+      .post('/api/v1/brands')
+      .set(admin.auth)
+      .send({ name: 'ABB', slug: 'abb', sortOrder: 1, isActive: true })
+      .expect(201);
+    // 3. Inactive brand
+    await api()
+      .post('/api/v1/brands')
+      .set(admin.auth)
+      .send({ name: 'Honeywell', slug: 'honeywell', sortOrder: 0, isActive: false })
+      .expect(201);
+    // 4. Soft-deleted brand
+    const deleted = await api()
+      .post('/api/v1/brands')
+      .set(admin.auth)
+      .send({ name: 'Omron', slug: 'omron', sortOrder: 0, isActive: true })
+      .expect(201);
+    await api().delete(`/api/v1/brands/${deleted.body.data.id}`).set(admin.auth).expect(204);
+  });
 
-    await api().delete(`/api/v1/brands/${id}`).set(sales.auth).expect(403);
+  it('GET /api/v1/public/brands returns only active, non-deleted brands sorted by sortOrder ASC, then name ASC', async () => {
+    const res = await api().get('/api/v1/public/brands').expect(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data).toHaveLength(2);
+
+    // Order check: ABB (sortOrder 1) before Siemens (sortOrder 2)
+    expect(res.body.data[0].name).toBe('ABB');
+    expect(res.body.data[1].name).toBe('Siemens');
+
+    // Public DTO: verify fields and ensure internal/audit fields are excluded
+    for (const item of res.body.data) {
+      expect(item).toHaveProperty('id');
+      expect(item).toHaveProperty('name');
+      expect(item).toHaveProperty('slug');
+      expect(item).toHaveProperty('description');
+      expect(item).toHaveProperty('logoUrl');
+      expect(item).toHaveProperty('bannerUrl');
+
+      expect(item).not.toHaveProperty('isActive');
+      expect(item).not.toHaveProperty('sortOrder');
+      expect(item).not.toHaveProperty('nameKey');
+      expect(item).not.toHaveProperty('createdAt');
+      expect(item).not.toHaveProperty('updatedAt');
+      expect(item).not.toHaveProperty('deletedAt');
+      expect(item).not.toHaveProperty('createdById');
+      expect(item).not.toHaveProperty('updatedById');
+    }
+  });
+
+  it('GET /api/v1/public/brands/:slug returns active brand details by slug', async () => {
+    const res = await api().get('/api/v1/public/brands/siemens').expect(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data).toMatchObject({
+      name: 'Siemens',
+      slug: 'siemens',
+      bannerUrl: 'https://example.com/siemens.png',
+    });
+    expect(res.body.data).not.toHaveProperty('createdAt');
+    expect(res.body.data).not.toHaveProperty('createdById');
+  });
+
+  it('GET /api/v1/public/brands/:slug returns 404 for inactive brand', async () => {
+    await api().get('/api/v1/public/brands/honeywell').expect(404);
+  });
+
+  it('GET /api/v1/public/brands/:slug returns 404 for soft-deleted brand', async () => {
+    await api().get('/api/v1/public/brands/omron').expect(404);
+  });
+
+  it('GET /api/v1/public/brands/:slug returns 404 for nonexistent slug', async () => {
+    await api().get('/api/v1/public/brands/nonexistent-brand').expect(404);
   });
 });
 
@@ -69,6 +182,7 @@ describe('POST /api/v1/brands', () => {
       slug: 'schneider-electric',
       description: 'Global specialist in energy management and automation',
       logoUrl: 'https://example.com/logos/schneider.png',
+      bannerUrl: 'https://example.com/banners/schneider.png',
       isActive: true,
       sortOrder: 10,
     });
@@ -77,6 +191,8 @@ describe('POST /api/v1/brands', () => {
     expect(res.body.data.updatedAt).toBeDefined();
 
     const row = await prisma.brand.findUniqueOrThrow({ where: { id: res.body.data.id } });
+    expect(row.nameKey).toBe('schneider electric');
+    expect(row.bannerUrl).toBe('https://example.com/banners/schneider.png');
     expect(row.createdById).toBe(admin.user.id);
   });
 
@@ -92,9 +208,30 @@ describe('POST /api/v1/brands', () => {
       slug: 'abb',
       description: null,
       logoUrl: null,
+      bannerUrl: null,
       isActive: true,
       sortOrder: 0,
     });
+  });
+
+  it('auto-generates slug from name when omitted', async () => {
+    const res = await api()
+      .post('/api/v1/brands')
+      .set(admin.auth)
+      .send({ name: 'General Electric Automation' })
+      .expect(201);
+
+    expect(res.body.data.slug).toBe('general-electric-automation');
+  });
+
+  it('allows manual slug override when provided', async () => {
+    const res = await api()
+      .post('/api/v1/brands')
+      .set(admin.auth)
+      .send({ name: 'General Electric', slug: 'ge-power' })
+      .expect(201);
+
+    expect(res.body.data.slug).toBe('ge-power');
   });
 
   it('rejects invalid payload with 400', async () => {
@@ -144,6 +281,37 @@ describe('POST /api/v1/brands', () => {
     expect(res.body.error.code).toBe(BrandsErrorCode.NAME_TAKEN);
   });
 
+  it('rejects duplicate normalized names (case and whitespace insensitive) with 409', async () => {
+    await api().post('/api/v1/brands').set(admin.auth).send(sampleBrand).expect(201);
+
+    const res = await api()
+      .post('/api/v1/brands')
+      .set(admin.auth)
+      .send({ name: '  schneider electric  ', slug: 'schneider-variant' })
+      .expect(409);
+
+    expect(res.body.error.code).toBe(BrandsErrorCode.NAME_TAKEN);
+  });
+
+  it('maps Prisma P2002 unique constraint violations to HTTP 409', async () => {
+    const spy = vi.spyOn(prisma.brand, 'create').mockRejectedValueOnce(
+      new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+        code: 'P2002',
+        clientVersion: '6.19.3',
+        meta: { target: ['name_key'] },
+      })
+    );
+
+    const res = await api()
+      .post('/api/v1/brands')
+      .set(admin.auth)
+      .send({ name: 'Unique Brand Name', slug: 'unique-slug' })
+      .expect(409);
+
+    expect(res.body.error.code).toBe(BrandsErrorCode.NAME_TAKEN);
+    spy.mockRestore();
+  });
+
   it('rejects duplicate brand slug with 409', async () => {
     await api().post('/api/v1/brands').set(admin.auth).send(sampleBrand).expect(201);
 
@@ -168,13 +336,14 @@ describe('POST /api/v1/brands', () => {
       .expect(409);
     expect(resSlug.body.error.code).toBe(BrandsErrorCode.SLUG_BELONGS_TO_DELETED_BRAND);
 
-    // Name belongs to deleted brand
+    // Name belongs to deleted brand (instructs user to restore)
     const resName = await api()
       .post('/api/v1/brands')
       .set(admin.auth)
       .send({ name: 'Schneider Electric', slug: 'unique-slug' })
       .expect(409);
     expect(resName.body.error.code).toBe(BrandsErrorCode.NAME_BELONGS_TO_DELETED_BRAND);
+    expect(resName.body.error.message).toContain('Please restore the deleted brand');
   });
 });
 
@@ -287,6 +456,7 @@ describe('PATCH /api/v1/brands/:id', () => {
       .send({
         name: 'Schneider Electric SE',
         description: 'Updated description',
+        bannerUrl: 'https://example.com/new-banner.jpg',
         sortOrder: 99,
         isActive: false,
       })
@@ -296,12 +466,29 @@ describe('PATCH /api/v1/brands/:id', () => {
       name: 'Schneider Electric SE',
       slug: 'schneider-electric',
       description: 'Updated description',
+      bannerUrl: 'https://example.com/new-banner.jpg',
       sortOrder: 99,
       isActive: false,
     });
 
     const row = await prisma.brand.findUniqueOrThrow({ where: { id } });
+    expect(row.nameKey).toBe('schneider electric se');
+    expect(row.bannerUrl).toBe('https://example.com/new-banner.jpg');
     expect(row.updatedById).toBe(admin.user.id);
+  });
+
+  it('supports partial updates with a single field', async () => {
+    const created = await api().post('/api/v1/brands').set(admin.auth).send(sampleBrand).expect(201);
+    const id = created.body.data.id;
+
+    const res = await api()
+      .patch(`/api/v1/brands/${id}`)
+      .set(admin.auth)
+      .send({ description: 'Only description changed' })
+      .expect(200);
+
+    expect(res.body.data.description).toBe('Only description changed');
+    expect(res.body.data.name).toBe(sampleBrand.name);
   });
 
   it('rejects empty update body with 400', async () => {
@@ -337,7 +524,7 @@ describe('PATCH /api/v1/brands/:id', () => {
     const res = await api()
       .patch(`/api/v1/brands/${brand2.body.data.id}`)
       .set(admin.auth)
-      .send({ name: 'Schneider Electric' })
+      .send({ name: '  schneider electric  ' })
       .expect(409);
 
     expect(res.body.error.code).toBe(BrandsErrorCode.NAME_TAKEN);
@@ -389,5 +576,174 @@ describe('DELETE /api/v1/brands/:id', () => {
 
     await api().delete(`/api/v1/brands/${id}`).set(admin.auth).expect(204);
     await api().delete(`/api/v1/brands/${id}`).set(admin.auth).expect(404);
+  });
+});
+
+describe('POST /api/v1/brands/:id/restore', () => {
+  it('restores a soft-deleted brand', async () => {
+    const created = await api().post('/api/v1/brands').set(admin.auth).send(sampleBrand).expect(201);
+    const id = created.body.data.id;
+
+    await api().delete(`/api/v1/brands/${id}`).set(admin.auth).expect(204);
+
+    const res = await api().post(`/api/v1/brands/${id}/restore`).set(admin.auth).expect(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.id).toBe(id);
+
+    // Verify in database: deletedAt is null
+    const row = await prisma.brand.findUniqueOrThrow({ where: { id } });
+    expect(row.deletedAt).toBeNull();
+    expect(row.updatedById).toBe(admin.user.id);
+
+    // Accessible again via getById
+    await api().get(`/api/v1/brands/${id}`).set(admin.auth).expect(200);
+  });
+
+  it('returns 409 when restoring a brand that is not deleted', async () => {
+    const created = await api().post('/api/v1/brands').set(admin.auth).send(sampleBrand).expect(201);
+    const id = created.body.data.id;
+
+    const res = await api().post(`/api/v1/brands/${id}/restore`).set(admin.auth).expect(409);
+    expect(res.body.error.code).toBe(BrandsErrorCode.NOT_DELETED);
+  });
+
+  it('returns 404 when restoring a nonexistent brand', async () => {
+    await api().post(`/api/v1/brands/${randomUUID()}/restore`).set(admin.auth).expect(404);
+  });
+});
+
+describe('Brand Upload Routes (Logo & Banner)', () => {
+  let brandId: string;
+
+  beforeEach(async () => {
+    const res = await api().post('/api/v1/brands').set(admin.auth).send(sampleBrand).expect(201);
+    brandId = res.body.data.id;
+  });
+
+  it('uploads a valid PNG logo via multipart/form-data and updates logoUrl', async () => {
+    const res = await api()
+      .put(`/api/v1/brands/${brandId}/logo`)
+      .set(admin.auth)
+      .attach('file', samplePng, 'logo.png')
+      .expect(200);
+
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.logoUrl).toMatch(/^\/uploads\/brands\/logos\/[a-f0-9-]+\.png$/);
+  });
+
+  it('allows Sales Manager to upload logo', async () => {
+    const res = await api()
+      .put(`/api/v1/brands/${brandId}/logo`)
+      .set(sales.auth)
+      .attach('logo', samplePng, 'logo.png')
+      .expect(200);
+
+    expect(res.body.data.logoUrl).toMatch(/^\/uploads\/brands\/logos\/[a-f0-9-]+\.png$/);
+  });
+
+  it('removes a brand logo via DELETE /brands/:id/logo', async () => {
+    // First upload
+    await api()
+      .put(`/api/v1/brands/${brandId}/logo`)
+      .set(admin.auth)
+      .attach('file', samplePng, 'logo.png')
+      .expect(200);
+
+    // Then delete
+    const res = await api().delete(`/api/v1/brands/${brandId}/logo`).set(admin.auth).expect(200);
+    expect(res.body.data.logoUrl).toBeNull();
+  });
+
+  it('uploads a valid WebP banner via multipart/form-data and updates bannerUrl', async () => {
+    const res = await api()
+      .put(`/api/v1/brands/${brandId}/banner`)
+      .set(admin.auth)
+      .attach('file', sampleWebp, 'banner.webp')
+      .expect(200);
+
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.bannerUrl).toMatch(/^\/uploads\/brands\/banners\/[a-f0-9-]+\.webp$/);
+  });
+
+  it('uploads a valid JPEG banner via multipart/form-data and updates bannerUrl', async () => {
+    const res = await api()
+      .put(`/api/v1/brands/${brandId}/banner`)
+      .set(admin.auth)
+      .attach('banner', sampleJpg, 'banner.jpg')
+      .expect(200);
+
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.bannerUrl).toMatch(/^\/uploads\/brands\/banners\/[a-f0-9-]+\.jpg$/);
+  });
+
+  it('removes a brand banner via DELETE /brands/:id/banner', async () => {
+    // First upload
+    await api()
+      .put(`/api/v1/brands/${brandId}/banner`)
+      .set(admin.auth)
+      .attach('file', sampleWebp, 'banner.webp')
+      .expect(200);
+
+    // Then delete
+    const res = await api().delete(`/api/v1/brands/${brandId}/banner`).set(admin.auth).expect(200);
+    expect(res.body.data.bannerUrl).toBeNull();
+  });
+
+  it('rejects SVG files with 400', async () => {
+    const res = await api()
+      .put(`/api/v1/brands/${brandId}/logo`)
+      .set(admin.auth)
+      .attach('file', sampleSvg, 'vector.svg')
+      .expect(400);
+
+    expect(res.body.error.message).toContain('SVG');
+  });
+
+  it('rejects SVG files disguised as PNG with 400 (content byte validation)', async () => {
+    const res = await api()
+      .put(`/api/v1/brands/${brandId}/logo`)
+      .set(admin.auth)
+      .attach('file', sampleSvg, 'vector.png')
+      .expect(400);
+
+    expect(res.body.error.message).toContain('SVG');
+  });
+
+  it('rejects invalid file content (non-images) with 400', async () => {
+    const res = await api()
+      .put(`/api/v1/brands/${brandId}/logo`)
+      .set(admin.auth)
+      .attach('file', sampleText, 'document.png')
+      .expect(400);
+
+    expect(res.body.error.message).toContain('Invalid file content');
+  });
+
+  it('rejects logo exceeding 2 MB limit with 400', async () => {
+    const res = await api()
+      .put(`/api/v1/brands/${brandId}/logo`)
+      .set(admin.auth)
+      .attach('file', oversizedLogo, 'huge.png')
+      .expect(400);
+
+    expect(res.body.error.message).toContain('exceeds maximum allowed limit of 2 MB');
+  });
+
+  it('rejects banner exceeding 5 MB limit with 400', async () => {
+    const res = await api()
+      .put(`/api/v1/brands/${brandId}/banner`)
+      .set(admin.auth)
+      .attach('file', oversizedBanner, 'huge.png')
+      .expect(400);
+
+    expect(res.body.error.message).toContain('exceeds maximum allowed limit of 5 MB');
+  });
+
+  it('returns 404 for uploads to nonexistent brand', async () => {
+    await api()
+      .put(`/api/v1/brands/${randomUUID()}/logo`)
+      .set(admin.auth)
+      .attach('file', samplePng, 'logo.png')
+      .expect(404);
   });
 });

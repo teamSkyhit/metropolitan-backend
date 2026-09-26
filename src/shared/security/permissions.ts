@@ -42,6 +42,9 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     Permission.ENQUIRIES_ASSIGN,
     Permission.ENQUIRIES_FOLLOW_UP,
     Permission.BRANDS_READ,
+    Permission.BRANDS_CREATE,
+    Permission.BRANDS_UPDATE,
+    Permission.BRANDS_DELETE,
   ],
 };
 

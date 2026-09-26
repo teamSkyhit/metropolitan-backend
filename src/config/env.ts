@@ -75,6 +75,15 @@ const envSchema = z
     /** Optional allow-list of hostnames the captcha must have been solved on. */
     CAPTCHA_ALLOWED_HOSTNAMES: commaList.default([]),
     CAPTCHA_TIMEOUT_MS: z.coerce.number().int().positive().default(5000),
+
+    STORAGE_DRIVER: z.enum(['local', 's3']).default('local'),
+    STORAGE_LOCAL_DIR: z.string().default('uploads'),
+    STORAGE_BASE_URL: z.string().default('/uploads'),
+    S3_BUCKET: z.string().optional(),
+    S3_REGION: z.string().default('us-east-1'),
+    S3_ENDPOINT: z.string().optional(),
+    S3_ACCESS_KEY_ID: z.string().optional(),
+    S3_SECRET_ACCESS_KEY: z.string().optional(),
   })
   .superRefine((env, ctx) => {
     if (env.CAPTCHA_PROVIDER !== 'none' && !env.CAPTCHA_SECRET_KEY) {
@@ -82,6 +91,14 @@ const envSchema = z
         code: 'custom',
         path: ['CAPTCHA_SECRET_KEY'],
         message: 'CAPTCHA_SECRET_KEY is required when CAPTCHA_PROVIDER is set',
+      });
+    }
+
+    if (env.STORAGE_DRIVER === 's3' && !env.S3_BUCKET) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['S3_BUCKET'],
+        message: 'S3_BUCKET is required when STORAGE_DRIVER is s3',
       });
     }
 

@@ -1,10 +1,10 @@
 import { Router } from 'express';
 import { registerAuthUserResolver } from '../middleware';
 import { authModule } from '../modules/auth';
+import { brandsModule } from '../modules/brands';
 import { enquiriesModule } from '../modules/enquiries';
 import { healthModule } from '../modules/health';
 import { usersModule, usersService } from '../modules/users';
-import { brandsModule } from '../modules/brands';
 import type { AppModule } from '../shared/module';
 
 /**

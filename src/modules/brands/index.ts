@@ -1,15 +1,25 @@
 import type { AppModule } from '../../shared/module';
 import { registerBrandsDocs } from './brands.docs';
-import { brandsRouter } from './brands.routes';
+import { brandsPublicRouter, brandsRouter } from './brands.routes';
 
 export const brandsModule: AppModule = {
   name: 'brands',
   basePath: '/brands',
   router: brandsRouter,
+  publicRouter: brandsPublicRouter,
   registerDocs: registerBrandsDocs,
 };
 
 // Public API for other modules.
-export { brandsService, toBrandDto } from './brands.service';
+export { brandsService, toBrandDto, toPublicBrandDto, generateSlug } from './brands.service';
 export type { BrandRecord } from './brands.repository';
-export { brandSchema, brandsSchema, type BrandDto, type BrandsDto } from './brands.schema';
+export {
+  BrandsErrorCode,
+  brandSchema,
+  publicBrandSchema,
+  type BrandDto,
+  type PublicBrandDto,
+  type CreateBrandBody,
+  type UpdateBrandBody,
+  type ListBrandsQuery,
+} from './brands.schema';

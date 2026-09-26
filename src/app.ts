@@ -1,5 +1,6 @@
 import express, { type Express } from 'express';
 import helmet from 'helmet';
+import path from 'node:path';
 import { config } from './config/env';
 import { createDocsRouter } from './config/swagger';
 import { corsMiddleware, errorHandler, notFoundHandler, rateLimiters, requestLogger } from './middleware';
@@ -16,6 +17,9 @@ export function createApp(): Express {
 
   app.use(helmet());
   app.use(corsMiddleware);
+  if (config.STORAGE_DRIVER === 'local') {
+    app.use(config.STORAGE_BASE_URL, express.static(path.resolve(config.STORAGE_LOCAL_DIR)));
+  }
   app.use(express.json({ limit: config.BODY_LIMIT }));
   app.use('/api', rateLimiters.global);
 
