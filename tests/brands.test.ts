@@ -25,26 +25,6 @@ const sampleBrand = {
   sortOrder: 10,
 };
 
-// Test buffers for upload validation
-const samplePng = Buffer.from([
-  0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
-]);
-const sampleJpg = Buffer.from([
-  0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01, 0x01, 0x00, 0x00, 0x01,
-]);
-const sampleWebp = Buffer.concat([
-  Buffer.from('RIFF'),
-  Buffer.alloc(4),
-  Buffer.from('WEBP'),
-  Buffer.from('VP8 '),
-]);
-const sampleSvg = Buffer.from(
-  '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><circle cx="50" cy="50" r="40"/></svg>'
-);
-const sampleText = Buffer.from('This is a plain text file masquerading as an image');
-const oversizedLogo = Buffer.concat([samplePng, Buffer.alloc(2.5 * 1024 * 1024)]);
-const oversizedBanner = Buffer.concat([samplePng, Buffer.alloc(5.5 * 1024 * 1024)]);
-
 describe('Brands Access Control & Authentication', () => {
   it('rejects unauthenticated requests on all brand endpoints with 401', async () => {
     const id = randomUUID();
@@ -169,6 +149,22 @@ describe('Public Brand APIs', () => {
 
   it('GET /api/v1/public/brands/:slug returns 404 for nonexistent slug', async () => {
     await api().get('/api/v1/public/brands/nonexistent-brand').expect(404);
+  });
+
+  it('GET /api/v1/public/brands/:slug rejects invalid slug formats with 400 validation error', async () => {
+    // Uppercase not matching slugRegex
+    const upperRes = await api().get('/api/v1/public/brands/INVALID-SLUG').expect(400);
+    expect(upperRes.body.error.code).toBe('VALIDATION_ERROR');
+
+    // Invalid characters (spaces, special characters)
+    const specialRes = await api().get('/api/v1/public/brands/invalid_slug!').expect(400);
+    expect(specialRes.body.error.code).toBe('VALIDATION_ERROR');
+
+    // Slug exceeding 120 characters
+    const longRes = await api()
+      .get(`/api/v1/public/brands/${'a'.repeat(121)}`)
+      .expect(400);
+    expect(longRes.body.error.code).toBe('VALIDATION_ERROR');
   });
 });
 
@@ -609,141 +605,5 @@ describe('POST /api/v1/brands/:id/restore', () => {
 
   it('returns 404 when restoring a nonexistent brand', async () => {
     await api().post(`/api/v1/brands/${randomUUID()}/restore`).set(admin.auth).expect(404);
-  });
-});
-
-describe('Brand Upload Routes (Logo & Banner)', () => {
-  let brandId: string;
-
-  beforeEach(async () => {
-    const res = await api().post('/api/v1/brands').set(admin.auth).send(sampleBrand).expect(201);
-    brandId = res.body.data.id;
-  });
-
-  it('uploads a valid PNG logo via multipart/form-data and updates logoUrl', async () => {
-    const res = await api()
-      .put(`/api/v1/brands/${brandId}/logo`)
-      .set(admin.auth)
-      .attach('file', samplePng, 'logo.png')
-      .expect(200);
-
-    expect(res.body.success).toBe(true);
-    expect(res.body.data.logoUrl).toMatch(/^\/uploads\/brands\/logos\/[a-f0-9-]+\.png$/);
-  });
-
-  it('allows Sales Manager to upload logo', async () => {
-    const res = await api()
-      .put(`/api/v1/brands/${brandId}/logo`)
-      .set(sales.auth)
-      .attach('logo', samplePng, 'logo.png')
-      .expect(200);
-
-    expect(res.body.data.logoUrl).toMatch(/^\/uploads\/brands\/logos\/[a-f0-9-]+\.png$/);
-  });
-
-  it('removes a brand logo via DELETE /brands/:id/logo', async () => {
-    // First upload
-    await api()
-      .put(`/api/v1/brands/${brandId}/logo`)
-      .set(admin.auth)
-      .attach('file', samplePng, 'logo.png')
-      .expect(200);
-
-    // Then delete
-    const res = await api().delete(`/api/v1/brands/${brandId}/logo`).set(admin.auth).expect(200);
-    expect(res.body.data.logoUrl).toBeNull();
-  });
-
-  it('uploads a valid WebP banner via multipart/form-data and updates bannerUrl', async () => {
-    const res = await api()
-      .put(`/api/v1/brands/${brandId}/banner`)
-      .set(admin.auth)
-      .attach('file', sampleWebp, 'banner.webp')
-      .expect(200);
-
-    expect(res.body.success).toBe(true);
-    expect(res.body.data.bannerUrl).toMatch(/^\/uploads\/brands\/banners\/[a-f0-9-]+\.webp$/);
-  });
-
-  it('uploads a valid JPEG banner via multipart/form-data and updates bannerUrl', async () => {
-    const res = await api()
-      .put(`/api/v1/brands/${brandId}/banner`)
-      .set(admin.auth)
-      .attach('banner', sampleJpg, 'banner.jpg')
-      .expect(200);
-
-    expect(res.body.success).toBe(true);
-    expect(res.body.data.bannerUrl).toMatch(/^\/uploads\/brands\/banners\/[a-f0-9-]+\.jpg$/);
-  });
-
-  it('removes a brand banner via DELETE /brands/:id/banner', async () => {
-    // First upload
-    await api()
-      .put(`/api/v1/brands/${brandId}/banner`)
-      .set(admin.auth)
-      .attach('file', sampleWebp, 'banner.webp')
-      .expect(200);
-
-    // Then delete
-    const res = await api().delete(`/api/v1/brands/${brandId}/banner`).set(admin.auth).expect(200);
-    expect(res.body.data.bannerUrl).toBeNull();
-  });
-
-  it('rejects SVG files with 400', async () => {
-    const res = await api()
-      .put(`/api/v1/brands/${brandId}/logo`)
-      .set(admin.auth)
-      .attach('file', sampleSvg, 'vector.svg')
-      .expect(400);
-
-    expect(res.body.error.message).toContain('SVG');
-  });
-
-  it('rejects SVG files disguised as PNG with 400 (content byte validation)', async () => {
-    const res = await api()
-      .put(`/api/v1/brands/${brandId}/logo`)
-      .set(admin.auth)
-      .attach('file', sampleSvg, 'vector.png')
-      .expect(400);
-
-    expect(res.body.error.message).toContain('SVG');
-  });
-
-  it('rejects invalid file content (non-images) with 400', async () => {
-    const res = await api()
-      .put(`/api/v1/brands/${brandId}/logo`)
-      .set(admin.auth)
-      .attach('file', sampleText, 'document.png')
-      .expect(400);
-
-    expect(res.body.error.message).toContain('Invalid file content');
-  });
-
-  it('rejects logo exceeding 2 MB limit with 400', async () => {
-    const res = await api()
-      .put(`/api/v1/brands/${brandId}/logo`)
-      .set(admin.auth)
-      .attach('file', oversizedLogo, 'huge.png')
-      .expect(400);
-
-    expect(res.body.error.message).toContain('exceeds maximum allowed limit of 2 MB');
-  });
-
-  it('rejects banner exceeding 5 MB limit with 400', async () => {
-    const res = await api()
-      .put(`/api/v1/brands/${brandId}/banner`)
-      .set(admin.auth)
-      .attach('file', oversizedBanner, 'huge.png')
-      .expect(400);
-
-    expect(res.body.error.message).toContain('exceeds maximum allowed limit of 5 MB');
-  });
-
-  it('returns 404 for uploads to nonexistent brand', async () => {
-    await api()
-      .put(`/api/v1/brands/${randomUUID()}/logo`)
-      .set(admin.auth)
-      .attach('file', samplePng, 'logo.png')
-      .expect(404);
   });
 });

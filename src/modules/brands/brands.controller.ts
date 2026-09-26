@@ -1,4 +1,3 @@
-import { z } from 'zod';
 import {
   handle,
   idParamsSchema,
@@ -8,12 +7,13 @@ import {
   sendSuccess,
 } from '../../shared/http';
 import { requireAuth } from '../../shared/security/auth-context';
-import { createBrandBodySchema, listBrandsQuerySchema, updateBrandBodySchema } from './brands.schema';
+import {
+  createBrandBodySchema,
+  listBrandsQuerySchema,
+  publicBrandSlugParamsSchema,
+  updateBrandBodySchema,
+} from './brands.schema';
 import { brandsService } from './brands.service';
-
-const slugParamsSchema = z.object({
-  slug: z.string().trim().min(1, 'Slug is required'),
-});
 
 /** HTTP only: read validated input, call the service, send the response. */
 export const brandsController = {
@@ -67,7 +67,7 @@ export const brandsController = {
     sendSuccess(res, await brandsService.listPublic());
   }),
 
-  getBySlugPublic: handle({ params: slugParamsSchema }, async (req, res) => {
+  getBySlugPublic: handle({ params: publicBrandSlugParamsSchema }, async (req, res) => {
     sendSuccess(res, await brandsService.getBySlugPublic(req.params.slug));
   }),
 };

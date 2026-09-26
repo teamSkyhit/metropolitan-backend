@@ -13,12 +13,9 @@ import {
   createBrandBodySchema,
   listBrandsQuerySchema,
   publicBrandSchema,
+  publicBrandSlugParamsSchema,
   updateBrandBodySchema,
 } from './brands.schema';
-
-const slugParamsSchema = z.object({
-  slug: z.string().trim().min(1),
-});
 
 export function registerBrandsDocs(registry: OpenAPIRegistry): void {
   const adminTags = ['Brands'];
@@ -56,7 +53,7 @@ export function registerBrandsDocs(registry: OpenAPIRegistry): void {
     tags: publicTags,
     summary: 'Get public brand by slug',
     description: 'Public website endpoint. Returns brand details for brand landing pages.',
-    request: { params: slugParamsSchema },
+    request: { params: publicBrandSlugParamsSchema },
     responses: {
       200: jsonResponse('Public brand detail', successBody(publicBrandSchema)),
       ...errorResponses(400, 404, 500),

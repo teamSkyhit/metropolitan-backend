@@ -52,17 +52,21 @@ export const publicBrandSchema = z
   })
   .meta({ id: 'PublicBrand' });
 
+export const brandSlugSchema = z
+  .string()
+  .trim()
+  .min(1, 'Slug cannot be empty')
+  .max(120, 'Slug cannot exceed 120 characters')
+  .regex(slugRegex, 'Slug may only contain lowercase letters, numbers, and hyphens (e.g. brand-name)');
+
+export const publicBrandSlugParamsSchema = z.object({
+  slug: brandSlugSchema,
+});
+
 export const createBrandBodySchema = z
   .object({
     name: z.string().trim().min(1, 'Name is required').max(100, 'Name cannot exceed 100 characters'),
-    slug: z
-      .string()
-      .trim()
-      .toLowerCase()
-      .min(1, 'Slug cannot be empty')
-      .max(120, 'Slug cannot exceed 120 characters')
-      .regex(slugRegex, 'Slug may only contain lowercase letters, numbers, and hyphens (e.g. brand-name)')
-      .optional(),
+    slug: brandSlugSchema.optional(),
     description: z
       .string()
       .trim()
@@ -84,14 +88,7 @@ export const updateBrandBodySchema = z
       .min(1, 'Name cannot be empty')
       .max(100, 'Name cannot exceed 100 characters')
       .optional(),
-    slug: z
-      .string()
-      .trim()
-      .toLowerCase()
-      .min(1, 'Slug cannot be empty')
-      .max(120, 'Slug cannot exceed 120 characters')
-      .regex(slugRegex, 'Slug may only contain lowercase letters, numbers, and hyphens (e.g. brand-name)')
-      .optional(),
+    slug: brandSlugSchema.optional(),
     description: z
       .string()
       .trim()

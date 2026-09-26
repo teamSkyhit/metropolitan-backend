@@ -17,6 +17,8 @@ export {
   BrandsErrorCode,
   brandSchema,
   publicBrandSchema,
+  brandSlugSchema,
+  publicBrandSlugParamsSchema,
   type BrandDto,
   type PublicBrandDto,
   type CreateBrandBody,

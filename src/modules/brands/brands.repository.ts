@@ -35,7 +35,7 @@ export const brandsRepository = {
     });
   },
 
-  /** Public query: only active, non-deleted brands sorted by sortOrder ASC, then name ASC. */
+  /** Public query: only active, non-deleted brands sorted by sortOrder ASC, then name ASC. Capped at 200. */
   findManyPublic(): Promise<Brand[]> {
     return prisma.brand.findMany({
       where: {
@@ -43,6 +43,7 @@ export const brandsRepository = {
         isActive: true,
       },
       orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+      take: 200,
     });
   },
 
