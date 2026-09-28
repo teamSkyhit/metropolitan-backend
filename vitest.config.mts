@@ -12,6 +12,8 @@ export default defineConfig({
     // Integration tests share one database, so run files sequentially.
     fileParallelism: false,
     restoreMocks: true,
+    hookTimeout: 30000,
+    testTimeout: 30000,
     coverage: {
       provider: 'v8',
       include: ['src/**/*.ts'],

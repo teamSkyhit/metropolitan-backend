@@ -12,7 +12,7 @@ export const categoriesModule: AppModule = {
 
 // Public API for other modules.
 export { categoriesService, toCategoryDto, toPublicCategoryDto } from './categories.service';
-export type { CategoryRecord } from './categories.repository';
+export { categoriesRepository, type CategoryRecord } from './categories.repository';
 export {
   CategoriesErrorCode,
   categorySchema,
