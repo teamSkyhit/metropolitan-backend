@@ -39,7 +39,8 @@ export function registerCategoriesDocs(registry: OpenAPIRegistry): void {
     path: '/public/categories',
     tags: publicTags,
     summary: 'List active categories',
-    description: 'Public website endpoint. Returns non-deleted categories sorted by name ASC.',
+    description:
+      'Public website endpoint. Returns non-deleted, active categories sorted by sortOrder ASC, then name ASC.',
     responses: {
       200: jsonResponse('Active categories list', successBody(z.array(publicCategorySchema))),
       ...errorResponses(500),

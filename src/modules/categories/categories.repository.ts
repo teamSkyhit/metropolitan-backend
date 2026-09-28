@@ -27,22 +27,32 @@ export const categoriesRepository = {
     return prisma.category.findUnique({ where: { slug } });
   },
 
-  /** Public query: only non-deleted categories sorted by name ASC. Capped at 200. */
+  /** Includes soft-deleted categories to enforce name uniqueness across categories via normalized nameKey. */
+  findByNameIncludingDeleted(name: string): Promise<Category | null> {
+    const nameKey = name.trim().toLowerCase();
+    return prisma.category.findUnique({
+      where: { nameKey },
+    });
+  },
+
+  /** Public query: only active, non-deleted categories sorted by sortOrder ASC, then name ASC. Capped at 200. */
   findManyPublic(): Promise<Category[]> {
     return prisma.category.findMany({
       where: {
         ...notDeleted,
+        isActive: true,
       },
-      orderBy: [{ name: 'asc' }],
+      orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
       take: 200,
     });
   },
 
-  /** Public query: find non-deleted category by slug. */
+  /** Public query: find active, non-deleted category by slug. */
   findBySlugPublic(slug: string): Promise<Category | null> {
     return prisma.category.findFirst({
       where: {
         slug,
+        isActive: true,
         ...notDeleted,
       },
     });
@@ -51,6 +61,8 @@ export const categoriesRepository = {
   async findMany(query: ListCategoriesQuery): Promise<{ items: Category[]; total: number }> {
     const where: Prisma.CategoryWhereInput = {
       ...notDeleted,
+      ...(query.isActive !== undefined && { isActive: query.isActive }),
+      ...(query.parentId !== undefined && { parentId: query.parentId }),
       ...(query.search && {
         OR: [
           { name: { contains: query.search, mode: 'insensitive' } },
@@ -75,9 +87,13 @@ export const categoriesRepository = {
     return prisma.category.create({
       data: {
         name: data.name,
+        nameKey: data.name.trim().toLowerCase(),
         slug: data.slug,
         bannerUrl: data.bannerUrl ?? null,
         description: data.description ?? null,
+        isActive: data.isActive,
+        sortOrder: data.sortOrder,
+        parentId: data.parentId ?? null,
         ...createdBy(actorId),
       },
     });
@@ -87,10 +103,16 @@ export const categoriesRepository = {
     return prisma.category.update({
       where: { id },
       data: {
-        ...(data.name !== undefined && { name: data.name }),
+        ...(data.name !== undefined && {
+          name: data.name,
+          nameKey: data.name.trim().toLowerCase(),
+        }),
         ...(data.slug !== undefined && { slug: data.slug }),
         ...(data.bannerUrl !== undefined && { bannerUrl: data.bannerUrl }),
         ...(data.description !== undefined && { description: data.description }),
+        ...(data.isActive !== undefined && { isActive: data.isActive }),
+        ...(data.sortOrder !== undefined && { sortOrder: data.sortOrder }),
+        ...(data.parentId !== undefined && { parentId: data.parentId }),
         ...updatedBy(actorId),
       },
     });

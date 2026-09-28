@@ -2,9 +2,13 @@ import { z } from 'zod';
 import { paginationQuerySchema, sortOrderSchema } from '../../shared/http';
 
 export const CategoriesErrorCode = {
+  NAME_TAKEN: 'CATEGORIES_NAME_TAKEN',
   SLUG_TAKEN: 'CATEGORIES_SLUG_TAKEN',
+  NAME_BELONGS_TO_DELETED_CATEGORY: 'CATEGORIES_NAME_BELONGS_TO_DELETED_CATEGORY',
   SLUG_BELONGS_TO_DELETED_CATEGORY: 'CATEGORIES_SLUG_BELONGS_TO_DELETED_CATEGORY',
   NOT_DELETED: 'CATEGORIES_NOT_DELETED',
+  INVALID_PARENT: 'CATEGORIES_INVALID_PARENT',
+  CIRCULAR_PARENT: 'CATEGORIES_CIRCULAR_PARENT',
 } as const;
 
 export type CategoriesErrorCode = (typeof CategoriesErrorCode)[keyof typeof CategoriesErrorCode];
@@ -30,6 +34,9 @@ export const categorySchema = z
     slug: z.string(),
     bannerUrl: z.string().nullable(),
     description: z.string().nullable(),
+    isActive: z.boolean(),
+    sortOrder: z.number().int(),
+    parentId: z.uuid().nullable(),
     createdAt: z.iso.datetime(),
     updatedAt: z.iso.datetime(),
   })
@@ -43,6 +50,7 @@ export const publicCategorySchema = z
     slug: z.string(),
     bannerUrl: z.string().nullable(),
     description: z.string().nullable(),
+    parentId: z.uuid().nullable(),
   })
   .meta({ id: 'PublicCategory' });
 
@@ -68,6 +76,14 @@ export const createCategoryBodySchema = z
       .max(2000, 'Description cannot exceed 2000 characters')
       .nullable()
       .optional(),
+    isActive: z.boolean().optional().default(true),
+    sortOrder: z
+      .number()
+      .int('Sort order must be an integer')
+      .min(0, 'Sort order cannot be negative')
+      .optional()
+      .default(0),
+    parentId: z.uuid('Parent ID must be a valid UUID').nullable().optional(),
   })
   .meta({ id: 'CreateCategoryRequest' });
 
@@ -87,13 +103,26 @@ export const updateCategoryBodySchema = z
       .max(2000, 'Description cannot exceed 2000 characters')
       .nullable()
       .optional(),
+    isActive: z.boolean().optional(),
+    sortOrder: z
+      .number()
+      .int('Sort order must be an integer')
+      .min(0, 'Sort order cannot be negative')
+      .optional(),
+    parentId: z.uuid('Parent ID must be a valid UUID').nullable().optional(),
   })
   .refine((body) => Object.keys(body).length > 0, 'Provide at least one field to update')
   .meta({ id: 'UpdateCategoryRequest' });
 
 export const listCategoriesQuerySchema = paginationQuerySchema.extend({
   search: z.string().trim().min(1).max(100).optional().meta({ description: 'Matches category name or slug' }),
-  sortBy: z.enum(['name', 'slug', 'createdAt', 'updatedAt']).default('createdAt'),
+  isActive: z
+    .enum(['true', 'false'])
+    .transform((value) => value === 'true')
+    .optional()
+    .meta({ description: 'Filter by active status' }),
+  parentId: z.uuid().optional().meta({ description: 'Filter by parent category ID' }),
+  sortBy: z.enum(['name', 'slug', 'sortOrder', 'createdAt', 'updatedAt']).default('createdAt'),
   sortOrder: sortOrderSchema,
 });
 

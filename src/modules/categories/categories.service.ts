@@ -18,6 +18,9 @@ function handlePrismaUniqueError(err: unknown): void {
     const target = Array.isArray(err.meta?.target)
       ? err.meta.target.join(',')
       : String(err.meta?.target ?? '');
+    if (target.includes('name_key') || target.includes('name')) {
+      throw AppError.conflict('A category with this name already exists', CategoriesErrorCode.NAME_TAKEN);
+    }
     if (target.includes('slug')) {
       throw AppError.conflict('A category with this slug already exists', CategoriesErrorCode.SLUG_TAKEN);
     }
@@ -33,6 +36,9 @@ export function toCategoryDto(record: CategoryRecord): CategoryDto {
     slug: record.slug,
     bannerUrl: record.bannerUrl,
     description: record.description,
+    isActive: record.isActive,
+    sortOrder: record.sortOrder,
+    parentId: record.parentId,
     createdAt: record.createdAt.toISOString(),
     updatedAt: record.updatedAt.toISOString(),
   };
@@ -46,6 +52,7 @@ export function toPublicCategoryDto(record: CategoryRecord): PublicCategoryDto {
     slug: record.slug,
     bannerUrl: record.bannerUrl,
     description: record.description,
+    parentId: record.parentId,
   };
 }
 
@@ -62,6 +69,54 @@ async function assertSlugAvailable(slug: string, exceptCategoryId?: string): Pro
   throw AppError.conflict('A category with this slug already exists', CategoriesErrorCode.SLUG_TAKEN);
 }
 
+async function assertNameAvailable(name: string, exceptCategoryId?: string): Promise<void> {
+  const existing = await categoriesRepository.findByNameIncludingDeleted(name);
+  if (!existing || existing.id === exceptCategoryId) return;
+  if (existing.deletedAt) {
+    throw AppError.conflict(
+      'This name belongs to a deleted category. Please restore the deleted category instead of creating a new one.',
+      CategoriesErrorCode.NAME_BELONGS_TO_DELETED_CATEGORY,
+      { categoryId: existing.id }
+    );
+  }
+  throw AppError.conflict('A category with this name already exists', CategoriesErrorCode.NAME_TAKEN);
+}
+
+async function assertValidParent(
+  categoryId: string | undefined,
+  parentId: string | null | undefined
+): Promise<void> {
+  if (!parentId) return;
+  if (categoryId && parentId === categoryId) {
+    throw AppError.badRequest('A category cannot be its own parent', CategoriesErrorCode.INVALID_PARENT);
+  }
+  const parent = await categoriesRepository.findByIdIncludingDeleted(parentId);
+  if (!parent) {
+    throw AppError.badRequest('Parent category does not exist', CategoriesErrorCode.INVALID_PARENT);
+  }
+  if (parent.deletedAt) {
+    throw AppError.badRequest(
+      'Cannot assign a deleted category as parent',
+      CategoriesErrorCode.INVALID_PARENT
+    );
+  }
+
+  // Prevent circular parent relationships
+  if (categoryId) {
+    let currentParentId: string | null = parent.parentId;
+    while (currentParentId) {
+      if (currentParentId === categoryId) {
+        throw AppError.badRequest(
+          'Circular category parent relationship detected',
+          CategoriesErrorCode.CIRCULAR_PARENT
+        );
+      }
+      const ancestor = await categoriesRepository.findByIdIncludingDeleted(currentParentId);
+      currentParentId = ancestor?.parentId ?? null;
+    }
+  }
+}
+
 export const categoriesService = {
   async list(query: ListCategoriesQuery): Promise<Paginated<CategoryDto>> {
     const { items, total } = await categoriesRepository.findMany(query);
@@ -74,13 +129,13 @@ export const categoriesService = {
     return toCategoryDto(record);
   },
 
-  /** Public list: only non-deleted categories sorted by name ASC. */
+  /** Public list: only active, non-deleted categories sorted by sortOrder ASC, then name ASC. */
   async listPublic(): Promise<PublicCategoryDto[]> {
     const items = await categoriesRepository.findManyPublic();
     return items.map(toPublicCategoryDto);
   },
 
-  /** Public slug lookup: only non-deleted category. */
+  /** Public slug lookup: only active, non-deleted category. */
   async getBySlugPublic(slug: string): Promise<PublicCategoryDto> {
     const record = await categoriesRepository.findBySlugPublic(slug);
     if (!record) throw AppError.notFound('Category');
@@ -88,7 +143,9 @@ export const categoriesService = {
   },
 
   async create(body: CreateCategoryBody, actorId: string): Promise<CategoryDto> {
+    await assertNameAvailable(body.name);
     await assertSlugAvailable(body.slug);
+    await assertValidParent(undefined, body.parentId);
     try {
       const record = await categoriesRepository.create(body, actorId);
       return toCategoryDto(record);
@@ -102,8 +159,14 @@ export const categoriesService = {
     const existing = await categoriesRepository.findById(id);
     if (!existing) throw AppError.notFound('Category');
 
+    if (body.name && body.name.trim().toLowerCase() !== existing.name.trim().toLowerCase()) {
+      await assertNameAvailable(body.name, id);
+    }
     if (body.slug && body.slug !== existing.slug) {
       await assertSlugAvailable(body.slug, id);
+    }
+    if (body.parentId !== undefined && body.parentId !== existing.parentId) {
+      await assertValidParent(id, body.parentId);
     }
 
     try {
