@@ -12,6 +12,7 @@ import {
   assignEnquiryBodySchema,
   changeStatusBodySchema,
   listEnquiriesQuerySchema,
+  recentEnquiriesQuerySchema,
   submitEnquiryBodySchema,
   updateEnquiryBodySchema,
 } from './enquiries.schema';
@@ -21,6 +22,16 @@ export const enquiriesController = {
   /** Public website submission. */
   submit: handle({ body: submitEnquiryBodySchema }, async (req, res) => {
     sendCreated(res, await enquiriesService.submit(req.body, req.ip));
+  }),
+
+  dashboard: handle({ query: recentEnquiriesQuerySchema }, async (req, res) => {
+    const limit = req.query.limit ?? 10;
+    sendSuccess(res, await enquiriesService.getDashboard(limit));
+  }),
+
+  recent: handle({ query: recentEnquiriesQuerySchema }, async (req, res) => {
+    const limit = req.query.limit ?? 10;
+    sendSuccess(res, await enquiriesService.getRecent(limit));
   }),
 
   list: handle({ query: listEnquiriesQuerySchema }, async (req, res) => {

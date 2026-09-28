@@ -5,12 +5,15 @@ import {
   enquiriesRepository,
   type EnquiryDetailRecord,
   type EnquirySummaryRecord,
+  type RecentEnquiryRecord,
   type StatusUpdate,
 } from './enquiries.repository';
 import {
   EnquiriesErrorCode,
   EnquiryStatus,
   type ChangeStatusBody,
+  type DashboardRecentEnquiryDto,
+  type EnquiryDashboardDto,
   type EnquiryDetailDto,
   type EnquirySummaryDto,
   type FollowUpDto,
@@ -51,6 +54,17 @@ function toSummary(record: EnquirySummaryRecord): EnquirySummaryDto {
     lineItemCount: record._count.lineItems,
     createdAt: record.createdAt.toISOString(),
     updatedAt: record.updatedAt.toISOString(),
+  };
+}
+
+function toRecentDto(record: RecentEnquiryRecord): DashboardRecentEnquiryDto {
+  return {
+    id: record.id,
+    name: record.name,
+    company: record.company,
+    status: record.status,
+    assignedTo: record.assignedTo,
+    createdAt: record.createdAt.toISOString(),
   };
 }
 
@@ -186,5 +200,21 @@ export const enquiriesService = {
   async softDelete(id: string, actorId: string): Promise<void> {
     await getRecord(id);
     await enquiriesRepository.softDelete(id, actorId);
+  },
+
+  async getDashboard(recentLimit = 10): Promise<EnquiryDashboardDto> {
+    const [counts, recentRecords] = await Promise.all([
+      enquiriesRepository.getDashboardCounts(),
+      enquiriesRepository.findRecent(recentLimit),
+    ]);
+    return {
+      counts,
+      recentEnquiries: recentRecords.map(toRecentDto),
+    };
+  },
+
+  async getRecent(limit = 10): Promise<DashboardRecentEnquiryDto[]> {
+    const records = await enquiriesRepository.findRecent(limit);
+    return records.map(toRecentDto);
   },
 };

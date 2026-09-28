@@ -19,8 +19,18 @@ const detailInclude = {
   _count: { select: { lineItems: true } },
 } satisfies Prisma.EnquiryInclude;
 
+const recentSelect = {
+  id: true,
+  name: true,
+  company: true,
+  status: true,
+  assignedTo: person,
+  createdAt: true,
+} as const;
+
 export type EnquirySummaryRecord = Prisma.EnquiryGetPayload<{ include: typeof summaryInclude }>;
 export type EnquiryDetailRecord = Prisma.EnquiryGetPayload<{ include: typeof detailInclude }>;
+export type RecentEnquiryRecord = Prisma.EnquiryGetPayload<{ select: typeof recentSelect }>;
 
 export interface StatusUpdate {
   from: EnquiryStatus;
@@ -160,5 +170,64 @@ export const enquiriesRepository = {
 
   async softDelete(id: string, actorId: string): Promise<void> {
     await prisma.enquiry.update({ where: { id }, data: softDeleteData(actorId) });
+  },
+
+  async getDashboardCounts(): Promise<{
+    total: number;
+    new: number;
+    assigned: number;
+    contacted: number;
+    quotationSent: number;
+    negotiation: number;
+    closedWon: number;
+    closedLost: number;
+  }> {
+    const [countsByStatus, total] = await prisma.$transaction([
+      prisma.enquiry.groupBy({
+        by: ['status'],
+        where: notDeleted,
+        _count: { status: true },
+        orderBy: { status: 'asc' },
+      }),
+      prisma.enquiry.count({ where: notDeleted }),
+    ]);
+
+    const countMap: Record<EnquiryStatus, number> = {
+      NEW: 0,
+      ASSIGNED: 0,
+      CONTACTED: 0,
+      QUOTATION_SENT: 0,
+      NEGOTIATION: 0,
+      CLOSED_WON: 0,
+      CLOSED_LOST: 0,
+    };
+
+    for (const group of countsByStatus) {
+      const statusCount =
+        group._count && typeof group._count === 'object' && 'status' in group._count
+          ? (group._count.status as number)
+          : 0;
+      countMap[group.status] = statusCount;
+    }
+
+    return {
+      total,
+      new: countMap.NEW,
+      assigned: countMap.ASSIGNED,
+      contacted: countMap.CONTACTED,
+      quotationSent: countMap.QUOTATION_SENT,
+      negotiation: countMap.NEGOTIATION,
+      closedWon: countMap.CLOSED_WON,
+      closedLost: countMap.CLOSED_LOST,
+    };
+  },
+
+  findRecent(limit = 10): Promise<RecentEnquiryRecord[]> {
+    return prisma.enquiry.findMany({
+      where: notDeleted,
+      select: recentSelect,
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: limit,
+    });
   },
 };
