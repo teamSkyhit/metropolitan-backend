@@ -5,6 +5,7 @@ import { brandsModule } from '../modules/brands';
 import { enquiriesModule } from '../modules/enquiries';
 import { healthModule } from '../modules/health';
 import { usersModule, usersService } from '../modules/users';
+import { categoriesModule } from '../modules/categories';
 import type { AppModule } from '../shared/module';
 
 /**
@@ -17,6 +18,7 @@ export const modules: readonly AppModule[] = [
   usersModule,
   enquiriesModule,
   brandsModule,
+  categoriesModule,
   // @generator:modules
 ];
 
