@@ -1,4 +1,4 @@
-import type { z } from 'zod';
+import { z } from 'zod';
 import {
   BEARER_AUTH,
   CAPTCHA_AUTH,
@@ -14,10 +14,13 @@ import {
   addFollowUpBodySchema,
   assignEnquiryBodySchema,
   changeStatusBodySchema,
+  dashboardRecentEnquirySchema,
+  enquiryDashboardSchema,
   enquiryDetailSchema,
   enquirySummarySchema,
   followUpSchema,
   listEnquiriesQuerySchema,
+  recentEnquiriesQuerySchema,
   submitEnquiryBodySchema,
   submitEnquiryResponseSchema,
   updateEnquiryBodySchema,
@@ -47,6 +50,35 @@ export function registerEnquiriesDocs(registry: OpenAPIRegistry): void {
     responses: {
       201: jsonResponse('Submitted', successBody(submitEnquiryResponseSchema)),
       ...errorResponses(400, 429, 503),
+    },
+  });
+
+  registry.registerPath({
+    method: 'get',
+    path: '/enquiries/dashboard',
+    tags,
+    security,
+    summary: 'Dashboard enquiry metrics and recent submissions',
+    description:
+      'Requires `enquiries:read`. Returns status counts and recent enquiries for CRM dashboard widgets.',
+    request: { query: recentEnquiriesQuerySchema },
+    responses: {
+      200: jsonResponse('Dashboard summary', successBody(enquiryDashboardSchema)),
+      ...errorResponses(400, 401, 403),
+    },
+  });
+
+  registry.registerPath({
+    method: 'get',
+    path: '/enquiries/recent',
+    tags,
+    security,
+    summary: 'Recent enquiries list for dashboard table',
+    description: 'Requires `enquiries:read`. Returns practical summary fields for recent enquiries.',
+    request: { query: recentEnquiriesQuerySchema },
+    responses: {
+      200: jsonResponse('Recent enquiries', successBody(z.array(dashboardRecentEnquirySchema))),
+      ...errorResponses(400, 401, 403),
     },
   });
 

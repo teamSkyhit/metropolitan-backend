@@ -172,6 +172,43 @@ export const enquiryDetailSchema = enquirySummarySchema
   })
   .meta({ id: 'EnquiryDetail' });
 
+// ── Dashboard ─────────────────────────────────────────────────────────────────
+
+export const dashboardRecentEnquirySchema = z
+  .object({
+    id: z.uuid(),
+    name: z.string(),
+    company: z.string().nullable(),
+    status: z.enum(EnquiryStatus),
+    assignedTo: personSchema.nullable(),
+    createdAt: z.iso.datetime(),
+  })
+  .meta({ id: 'DashboardRecentEnquiry' });
+
+export const enquiryDashboardCountsSchema = z
+  .object({
+    total: z.number().int(),
+    new: z.number().int(),
+    assigned: z.number().int(),
+    contacted: z.number().int(),
+    quotationSent: z.number().int(),
+    negotiation: z.number().int(),
+    closedWon: z.number().int(),
+    closedLost: z.number().int(),
+  })
+  .meta({ id: 'EnquiryDashboardCounts' });
+
+export const enquiryDashboardSchema = z
+  .object({
+    counts: enquiryDashboardCountsSchema,
+    recentEnquiries: z.array(dashboardRecentEnquirySchema),
+  })
+  .meta({ id: 'EnquiryDashboard' });
+
+export const recentEnquiriesQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(50).default(10).optional(),
+});
+
 export type SubmitEnquiryBody = z.infer<typeof submitEnquiryBodySchema>;
 export type SubmitEnquiryResponse = z.infer<typeof submitEnquiryResponseSchema>;
 export type ListEnquiriesQuery = z.infer<typeof listEnquiriesQuerySchema>;
@@ -179,3 +216,7 @@ export type ChangeStatusBody = z.infer<typeof changeStatusBodySchema>;
 export type EnquirySummaryDto = z.infer<typeof enquirySummarySchema>;
 export type EnquiryDetailDto = z.infer<typeof enquiryDetailSchema>;
 export type FollowUpDto = z.infer<typeof followUpSchema>;
+export type DashboardRecentEnquiryDto = z.infer<typeof dashboardRecentEnquirySchema>;
+export type EnquiryDashboardCountsDto = z.infer<typeof enquiryDashboardCountsSchema>;
+export type EnquiryDashboardDto = z.infer<typeof enquiryDashboardSchema>;
+export type RecentEnquiriesQuery = z.infer<typeof recentEnquiriesQuerySchema>;

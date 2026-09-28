@@ -9,3 +9,17 @@ export const enquiriesModule: AppModule = {
   publicRouter: enquiriesPublicRouter,
   registerDocs: registerEnquiriesDocs,
 };
+
+export { enquiriesService } from './enquiries.service';
+export {
+  EnquiriesErrorCode,
+  EnquiryStatus,
+  enquiryDashboardSchema,
+  dashboardRecentEnquirySchema,
+  enquirySummarySchema,
+  enquiryDetailSchema,
+  type EnquiryDashboardDto,
+  type DashboardRecentEnquiryDto,
+  type EnquirySummaryDto,
+  type EnquiryDetailDto,
+} from './enquiries.schema';

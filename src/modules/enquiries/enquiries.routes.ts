@@ -22,6 +22,8 @@ export const enquiriesRouter = Router();
 enquiriesRouter.use(authenticate());
 
 enquiriesRouter.get('/', authorize(Permission.ENQUIRIES_READ), enquiriesController.list);
+enquiriesRouter.get('/dashboard', authorize(Permission.ENQUIRIES_READ), enquiriesController.dashboard);
+enquiriesRouter.get('/recent', authorize(Permission.ENQUIRIES_READ), enquiriesController.recent);
 enquiriesRouter.get('/:id', authorize(Permission.ENQUIRIES_READ), enquiriesController.getById);
 enquiriesRouter.patch('/:id', authorize(Permission.ENQUIRIES_UPDATE), enquiriesController.update);
 enquiriesRouter.post('/:id/status', authorize(Permission.ENQUIRIES_UPDATE), enquiriesController.changeStatus);

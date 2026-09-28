@@ -151,6 +151,144 @@ describe('GET /enquiries', () => {
   });
 });
 
+describe('GET /enquiries/dashboard', () => {
+  it('requires authentication and read permission', async () => {
+    await api().get('/api/v1/enquiries/dashboard').expect(401);
+    await api().get('/api/v1/enquiries/dashboard').set(sales.auth).expect(200);
+  });
+
+  it('returns breakdown counts and recent enquiries', async () => {
+    const e1 = await submitEnquiry({ name: 'Alpha Corp Enquiry', company: 'Alpha Corp' });
+    const e2 = await submitEnquiry({ name: 'Beta Ltd Enquiry', company: 'Beta Ltd' });
+    const e3 = await submitEnquiry({ name: 'Gamma Inc Enquiry', company: 'Gamma Inc' });
+
+    // Assign e2
+    await api()
+      .put(`/api/v1/enquiries/${e2}/assignee`)
+      .set(sales.auth)
+      .send({ assignedToId: sales.user.id })
+      .expect(200);
+
+    // Progress e3 to CONTACTED then QUOTATION_SENT
+    await api()
+      .post(`/api/v1/enquiries/${e3}/status`)
+      .set(sales.auth)
+      .send({ status: 'CONTACTED' })
+      .expect(200);
+    await api()
+      .post(`/api/v1/enquiries/${e3}/status`)
+      .set(sales.auth)
+      .send({ status: 'QUOTATION_SENT' })
+      .expect(200);
+
+    const res = await api().get('/api/v1/enquiries/dashboard').set(sales.auth).expect(200);
+
+    expect(res.body.data.counts).toEqual({
+      total: 3,
+      new: 1,
+      assigned: 1,
+      contacted: 0,
+      quotationSent: 1,
+      negotiation: 0,
+      closedWon: 0,
+      closedLost: 0,
+    });
+
+    expect(res.body.data.recentEnquiries).toHaveLength(3);
+    expect(res.body.data.recentEnquiries[0]).toEqual({
+      id: e3,
+      name: 'Gamma Inc Enquiry',
+      company: 'Gamma Inc',
+      status: 'QUOTATION_SENT',
+      assignedTo: null,
+      createdAt: expect.any(String),
+    });
+    expect(res.body.data.recentEnquiries[1]).toEqual({
+      id: e2,
+      name: 'Beta Ltd Enquiry',
+      company: 'Beta Ltd',
+      status: 'ASSIGNED',
+      assignedTo: { id: sales.user.id, name: 'Sales One' },
+      createdAt: expect.any(String),
+    });
+    expect(res.body.data.recentEnquiries[2]).toEqual({
+      id: e1,
+      name: 'Alpha Corp Enquiry',
+      company: 'Alpha Corp',
+      status: 'NEW',
+      assignedTo: null,
+      createdAt: expect.any(String),
+    });
+  });
+
+  it('immediately reflects new public website submissions', async () => {
+    const before = await api().get('/api/v1/enquiries/dashboard').set(sales.auth).expect(200);
+    expect(before.body.data.counts.total).toBe(0);
+
+    await submitEnquiry({ name: 'Website Lead' });
+
+    const after = await api().get('/api/v1/enquiries/dashboard').set(sales.auth).expect(200);
+    expect(after.body.data.counts.total).toBe(1);
+    expect(after.body.data.counts.new).toBe(1);
+    expect(after.body.data.recentEnquiries[0].name).toBe('Website Lead');
+  });
+
+  it('excludes soft-deleted enquiries from counts and recent list', async () => {
+    const id = await submitEnquiry({ name: 'To Be Deleted' });
+
+    const before = await api().get('/api/v1/enquiries/dashboard').set(sales.auth).expect(200);
+    expect(before.body.data.counts.total).toBe(1);
+    expect(before.body.data.recentEnquiries).toHaveLength(1);
+
+    await api().delete(`/api/v1/enquiries/${id}`).set(admin.auth).expect(204);
+
+    const after = await api().get('/api/v1/enquiries/dashboard').set(sales.auth).expect(200);
+    expect(after.body.data.counts.total).toBe(0);
+    expect(after.body.data.recentEnquiries).toHaveLength(0);
+  });
+
+  it('respects limit query param for recent enquiries', async () => {
+    await submitEnquiry({ name: 'One' });
+    await submitEnquiry({ name: 'Two' });
+    await submitEnquiry({ name: 'Three' });
+
+    const res = await api().get('/api/v1/enquiries/dashboard?limit=2').set(sales.auth).expect(200);
+    expect(res.body.data.counts.total).toBe(3);
+    expect(res.body.data.recentEnquiries).toHaveLength(2);
+    expect(res.body.data.recentEnquiries[0].name).toBe('Three');
+  });
+});
+
+describe('GET /enquiries/recent', () => {
+  it('requires authentication and read permission', async () => {
+    await api().get('/api/v1/enquiries/recent').expect(401);
+    await api().get('/api/v1/enquiries/recent').set(sales.auth).expect(200);
+  });
+
+  it('returns recent enquiries with minimal table fields', async () => {
+    const id = await submitEnquiry({ name: 'Customer Test', company: 'Metropolitan Corp' });
+
+    const res = await api().get('/api/v1/enquiries/recent').set(sales.auth).expect(200);
+
+    expect(res.body.data).toEqual([
+      {
+        id,
+        name: 'Customer Test',
+        company: 'Metropolitan Corp',
+        status: 'NEW',
+        assignedTo: null,
+        createdAt: expect.any(String),
+      },
+    ]);
+  });
+
+  it('rejects invalid limit query parameter', async () => {
+    await api().get('/api/v1/enquiries/recent?limit=0').set(sales.auth).expect(400);
+    await api().get('/api/v1/enquiries/recent?limit=100').set(sales.auth).expect(400);
+    await api().get('/api/v1/enquiries/recent?limit=abc').set(sales.auth).expect(400);
+  });
+});
+
 describe('GET /enquiries/:id', () => {
   it('returns the full detail', async () => {
     const id = await submitEnquiry();
