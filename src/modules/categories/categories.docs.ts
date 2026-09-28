@@ -13,7 +13,7 @@ import {
   createCategoryBodySchema,
   listCategoriesQuerySchema,
   publicCategorySchema,
-  publicCategorySeoUrlParamsSchema,
+  publicCategorySlugParamsSchema,
   updateCategoryBodySchema,
 } from './categories.schema';
 
@@ -48,11 +48,11 @@ export function registerCategoriesDocs(registry: OpenAPIRegistry): void {
 
   registry.registerPath({
     method: 'get',
-    path: '/public/categories/{seoUrl}',
+    path: '/public/categories/{slug}',
     tags: publicTags,
-    summary: 'Get public category by SEO URL',
+    summary: 'Get public category by slug',
     description: 'Public website endpoint. Returns category details for catalog and category pages.',
-    request: { params: publicCategorySeoUrlParamsSchema },
+    request: { params: publicCategorySlugParamsSchema },
     responses: {
       200: jsonResponse('Public category detail', successBody(publicCategorySchema)),
       ...errorResponses(400, 404, 500),
@@ -67,7 +67,7 @@ export function registerCategoriesDocs(registry: OpenAPIRegistry): void {
     tags: adminTags,
     security,
     summary: 'List categories',
-    description: 'Requires `categories:read`. Supports pagination, search on name or SEO URL, and sorting.',
+    description: 'Requires `categories:read`. Supports pagination, search on name or slug, and sorting.',
     request: { query: listCategoriesQuerySchema },
     responses: {
       200: jsonResponse('Paginated categories', paginatedBody(categorySchema)),
@@ -118,27 +118,13 @@ export function registerCategoriesDocs(registry: OpenAPIRegistry): void {
   });
 
   registry.registerPath({
-    method: 'put',
-    path: '/categories/{id}',
-    tags: adminTags,
-    security,
-    summary: 'Update category (PUT)',
-    description: 'Requires `categories:update` (Super Admin or Sales Manager). Supports update via PUT.',
-    request: { params: idParamsSchema, body: json(updateCategoryBodySchema) },
-    responses: {
-      200: jsonResponse('Updated', successBody(categorySchema)),
-      ...errorResponses(400, 401, 403, 404, 409),
-    },
-  });
-
-  registry.registerPath({
     method: 'delete',
     path: '/categories/{id}',
     tags: adminTags,
     security,
     summary: 'Soft delete category',
     description:
-      'Requires `categories:delete` (Super Admin or Sales Manager). SEO URLs stay reserved after deletion.',
+      'Requires `categories:delete` (Super Admin or Sales Manager). Slugs stay reserved after deletion.',
     request: { params: idParamsSchema },
     responses: {
       204: { description: 'Deleted' },

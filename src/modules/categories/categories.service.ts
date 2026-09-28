@@ -18,11 +18,8 @@ function handlePrismaUniqueError(err: unknown): void {
     const target = Array.isArray(err.meta?.target)
       ? err.meta.target.join(',')
       : String(err.meta?.target ?? '');
-    if (target.includes('seo_url') || target.includes('seoUrl')) {
-      throw AppError.conflict(
-        'A category with this SEO URL already exists',
-        CategoriesErrorCode.SEO_URL_TAKEN
-      );
+    if (target.includes('slug')) {
+      throw AppError.conflict('A category with this slug already exists', CategoriesErrorCode.SLUG_TAKEN);
     }
     throw AppError.conflict('A record with the same unique value already exists');
   }
@@ -33,8 +30,8 @@ export function toCategoryDto(record: CategoryRecord): CategoryDto {
   return {
     id: record.id,
     name: record.name,
-    seoUrl: record.seoUrl,
-    banner: record.banner,
+    slug: record.slug,
+    bannerUrl: record.bannerUrl,
     description: record.description,
     createdAt: record.createdAt.toISOString(),
     updatedAt: record.updatedAt.toISOString(),
@@ -46,23 +43,23 @@ export function toPublicCategoryDto(record: CategoryRecord): PublicCategoryDto {
   return {
     id: record.id,
     name: record.name,
-    seoUrl: record.seoUrl,
-    banner: record.banner,
+    slug: record.slug,
+    bannerUrl: record.bannerUrl,
     description: record.description,
   };
 }
 
-async function assertSeoUrlAvailable(seoUrl: string, exceptCategoryId?: string): Promise<void> {
-  const existing = await categoriesRepository.findBySeoUrlIncludingDeleted(seoUrl);
+async function assertSlugAvailable(slug: string, exceptCategoryId?: string): Promise<void> {
+  const existing = await categoriesRepository.findBySlugIncludingDeleted(slug);
   if (!existing || existing.id === exceptCategoryId) return;
   if (existing.deletedAt) {
     throw AppError.conflict(
-      'This SEO URL belongs to a deleted category. Please restore the deleted category instead.',
-      CategoriesErrorCode.SEO_URL_BELONGS_TO_DELETED_CATEGORY,
+      'This slug belongs to a deleted category. Please restore the deleted category instead.',
+      CategoriesErrorCode.SLUG_BELONGS_TO_DELETED_CATEGORY,
       { categoryId: existing.id }
     );
   }
-  throw AppError.conflict('A category with this SEO URL already exists', CategoriesErrorCode.SEO_URL_TAKEN);
+  throw AppError.conflict('A category with this slug already exists', CategoriesErrorCode.SLUG_TAKEN);
 }
 
 export const categoriesService = {
@@ -83,15 +80,15 @@ export const categoriesService = {
     return items.map(toPublicCategoryDto);
   },
 
-  /** Public SEO URL lookup: only non-deleted category. */
-  async getBySeoUrlPublic(seoUrl: string): Promise<PublicCategoryDto> {
-    const record = await categoriesRepository.findBySeoUrlPublic(seoUrl);
+  /** Public slug lookup: only non-deleted category. */
+  async getBySlugPublic(slug: string): Promise<PublicCategoryDto> {
+    const record = await categoriesRepository.findBySlugPublic(slug);
     if (!record) throw AppError.notFound('Category');
     return toPublicCategoryDto(record);
   },
 
   async create(body: CreateCategoryBody, actorId: string): Promise<CategoryDto> {
-    await assertSeoUrlAvailable(body.seoUrl);
+    await assertSlugAvailable(body.slug);
     try {
       const record = await categoriesRepository.create(body, actorId);
       return toCategoryDto(record);
@@ -105,8 +102,8 @@ export const categoriesService = {
     const existing = await categoriesRepository.findById(id);
     if (!existing) throw AppError.notFound('Category');
 
-    if (body.seoUrl && body.seoUrl !== existing.seoUrl) {
-      await assertSeoUrlAvailable(body.seoUrl, id);
+    if (body.slug && body.slug !== existing.slug) {
+      await assertSlugAvailable(body.slug, id);
     }
 
     try {
@@ -141,8 +138,8 @@ export const categoriesService = {
     validateFileSize(file.size, UPLOAD_LIMITS.BANNER_MAX_BYTES, 'Banner');
     const validated = validateImageContent(file.buffer);
 
-    if (category.banner) {
-      await storageService.delete(category.banner);
+    if (category.bannerUrl) {
+      await storageService.delete(category.bannerUrl);
     }
 
     const stored = await storageService.upload(
@@ -163,8 +160,8 @@ export const categoriesService = {
     const category = await categoriesRepository.findById(id);
     if (!category) throw AppError.notFound('Category');
 
-    if (category.banner) {
-      await storageService.delete(category.banner);
+    if (category.bannerUrl) {
+      await storageService.delete(category.bannerUrl);
     }
 
     const updated = await categoriesRepository.updateBanner(id, null, actorId);

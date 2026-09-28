@@ -2,14 +2,14 @@ import { z } from 'zod';
 import { paginationQuerySchema, sortOrderSchema } from '../../shared/http';
 
 export const CategoriesErrorCode = {
-  SEO_URL_TAKEN: 'CATEGORIES_SEO_URL_TAKEN',
-  SEO_URL_BELONGS_TO_DELETED_CATEGORY: 'CATEGORIES_SEO_URL_BELONGS_TO_DELETED_CATEGORY',
+  SLUG_TAKEN: 'CATEGORIES_SLUG_TAKEN',
+  SLUG_BELONGS_TO_DELETED_CATEGORY: 'CATEGORIES_SLUG_BELONGS_TO_DELETED_CATEGORY',
   NOT_DELETED: 'CATEGORIES_NOT_DELETED',
 } as const;
 
 export type CategoriesErrorCode = (typeof CategoriesErrorCode)[keyof typeof CategoriesErrorCode];
 
-const seoUrlRegex = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const slugRegex = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 const mediaUrlSchema = z
   .string()
@@ -27,8 +27,8 @@ export const categorySchema = z
   .object({
     id: z.uuid(),
     name: z.string(),
-    seoUrl: z.string(),
-    banner: z.string().nullable(),
+    slug: z.string(),
+    bannerUrl: z.string().nullable(),
     description: z.string().nullable(),
     createdAt: z.iso.datetime(),
     updatedAt: z.iso.datetime(),
@@ -40,31 +40,28 @@ export const publicCategorySchema = z
   .object({
     id: z.uuid(),
     name: z.string(),
-    seoUrl: z.string(),
-    banner: z.string().nullable(),
+    slug: z.string(),
+    bannerUrl: z.string().nullable(),
     description: z.string().nullable(),
   })
   .meta({ id: 'PublicCategory' });
 
-export const categorySeoUrlSchema = z
+export const categorySlugSchema = z
   .string()
   .trim()
-  .min(1, 'SEO URL cannot be empty')
-  .max(120, 'SEO URL cannot exceed 120 characters')
-  .regex(
-    seoUrlRegex,
-    'SEO URL may only contain lowercase letters, numbers, and hyphens (e.g. category-name)'
-  );
+  .min(1, 'Slug cannot be empty')
+  .max(120, 'Slug cannot exceed 120 characters')
+  .regex(slugRegex, 'Slug may only contain lowercase letters, numbers, and hyphens (e.g. category-name)');
 
-export const publicCategorySeoUrlParamsSchema = z.object({
-  seoUrl: categorySeoUrlSchema,
+export const publicCategorySlugParamsSchema = z.object({
+  slug: categorySlugSchema,
 });
 
 export const createCategoryBodySchema = z
   .object({
     name: z.string().trim().min(1, 'Name is required').max(100, 'Name cannot exceed 100 characters'),
-    seoUrl: categorySeoUrlSchema,
-    banner: mediaUrlSchema,
+    slug: categorySlugSchema,
+    bannerUrl: mediaUrlSchema,
     description: z
       .string()
       .trim()
@@ -82,8 +79,8 @@ export const updateCategoryBodySchema = z
       .min(1, 'Name cannot be empty')
       .max(100, 'Name cannot exceed 100 characters')
       .optional(),
-    seoUrl: categorySeoUrlSchema.optional(),
-    banner: mediaUrlSchema,
+    slug: categorySlugSchema.optional(),
+    bannerUrl: mediaUrlSchema,
     description: z
       .string()
       .trim()
@@ -95,14 +92,8 @@ export const updateCategoryBodySchema = z
   .meta({ id: 'UpdateCategoryRequest' });
 
 export const listCategoriesQuerySchema = paginationQuerySchema.extend({
-  search: z
-    .string()
-    .trim()
-    .min(1)
-    .max(100)
-    .optional()
-    .meta({ description: 'Matches category name or SEO URL' }),
-  sortBy: z.enum(['name', 'seoUrl', 'createdAt', 'updatedAt']).default('createdAt'),
+  search: z.string().trim().min(1).max(100).optional().meta({ description: 'Matches category name or slug' }),
+  sortBy: z.enum(['name', 'slug', 'createdAt', 'updatedAt']).default('createdAt'),
   sortOrder: sortOrderSchema,
 });
 

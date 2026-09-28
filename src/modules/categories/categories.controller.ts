@@ -10,7 +10,7 @@ import { requireAuth } from '../../shared/security/auth-context';
 import {
   createCategoryBodySchema,
   listCategoriesQuerySchema,
-  publicCategorySeoUrlParamsSchema,
+  publicCategorySlugParamsSchema,
   updateCategoryBodySchema,
 } from './categories.schema';
 import { categoriesService } from './categories.service';
@@ -59,7 +59,7 @@ export const categoriesController = {
     sendSuccess(res, await categoriesService.listPublic());
   }),
 
-  getBySeoUrlPublic: handle({ params: publicCategorySeoUrlParamsSchema }, async (req, res) => {
-    sendSuccess(res, await categoriesService.getBySeoUrlPublic(req.params.seoUrl));
+  getBySlugPublic: handle({ params: publicCategorySlugParamsSchema }, async (req, res) => {
+    sendSuccess(res, await categoriesService.getBySlugPublic(req.params.slug));
   }),
 };

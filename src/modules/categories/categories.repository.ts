@@ -22,9 +22,9 @@ export const categoriesRepository = {
     return prisma.category.findUnique({ where: { id } });
   },
 
-  /** Includes soft-deleted categories, because unique SEO URLs stay reserved after deletion. */
-  findBySeoUrlIncludingDeleted(seoUrl: string): Promise<Category | null> {
-    return prisma.category.findUnique({ where: { seoUrl } });
+  /** Includes soft-deleted categories, because unique slugs stay reserved after deletion. */
+  findBySlugIncludingDeleted(slug: string): Promise<Category | null> {
+    return prisma.category.findUnique({ where: { slug } });
   },
 
   /** Public query: only non-deleted categories sorted by name ASC. Capped at 200. */
@@ -38,11 +38,11 @@ export const categoriesRepository = {
     });
   },
 
-  /** Public query: find non-deleted category by SEO URL. */
-  findBySeoUrlPublic(seoUrl: string): Promise<Category | null> {
+  /** Public query: find non-deleted category by slug. */
+  findBySlugPublic(slug: string): Promise<Category | null> {
     return prisma.category.findFirst({
       where: {
-        seoUrl,
+        slug,
         ...notDeleted,
       },
     });
@@ -54,7 +54,7 @@ export const categoriesRepository = {
       ...(query.search && {
         OR: [
           { name: { contains: query.search, mode: 'insensitive' } },
-          { seoUrl: { contains: query.search, mode: 'insensitive' } },
+          { slug: { contains: query.search, mode: 'insensitive' } },
         ],
       }),
     };
@@ -75,8 +75,8 @@ export const categoriesRepository = {
     return prisma.category.create({
       data: {
         name: data.name,
-        seoUrl: data.seoUrl,
-        banner: data.banner ?? null,
+        slug: data.slug,
+        bannerUrl: data.bannerUrl ?? null,
         description: data.description ?? null,
         ...createdBy(actorId),
       },
@@ -88,8 +88,8 @@ export const categoriesRepository = {
       where: { id },
       data: {
         ...(data.name !== undefined && { name: data.name }),
-        ...(data.seoUrl !== undefined && { seoUrl: data.seoUrl }),
-        ...(data.banner !== undefined && { banner: data.banner }),
+        ...(data.slug !== undefined && { slug: data.slug }),
+        ...(data.bannerUrl !== undefined && { bannerUrl: data.bannerUrl }),
         ...(data.description !== undefined && { description: data.description }),
         ...updatedBy(actorId),
       },
@@ -110,11 +110,11 @@ export const categoriesRepository = {
     });
   },
 
-  updateBanner(id: string, banner: string | null, actorId: string): Promise<Category> {
+  updateBanner(id: string, bannerUrl: string | null, actorId: string): Promise<Category> {
     return prisma.category.update({
       where: { id },
       data: {
-        banner,
+        bannerUrl,
         ...updatedBy(actorId),
       },
     });

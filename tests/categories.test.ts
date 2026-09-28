@@ -17,9 +17,9 @@ beforeEach(async () => {
 
 const sampleCategory = {
   name: 'Industrial Automation',
-  seoUrl: 'industrial-automation',
+  slug: 'industrial-automation',
   description: 'PLCs, HMIs, drives, and industrial automation equipment',
-  banner: 'https://example.com/banners/automation.png',
+  bannerUrl: 'https://example.com/banners/automation.png',
 };
 
 // Valid binary buffers for upload testing
@@ -35,7 +35,6 @@ describe('Categories Access Control & Authentication', () => {
     await api().post('/api/v1/categories').send(sampleCategory).expect(401);
     await api().get(`/api/v1/categories/${id}`).expect(401);
     await api().patch(`/api/v1/categories/${id}`).send({ name: 'New' }).expect(401);
-    await api().put(`/api/v1/categories/${id}`).send({ name: 'New' }).expect(401);
     await api().delete(`/api/v1/categories/${id}`).expect(401);
     await api().post(`/api/v1/categories/${id}/restore`).expect(401);
     await api().put(`/api/v1/categories/${id}/banner`).expect(401);
@@ -109,19 +108,19 @@ describe('Public Category APIs', () => {
       .set(admin.auth)
       .send({
         name: 'Switchgear',
-        seoUrl: 'switchgear',
+        slug: 'switchgear',
         description: 'Electrical switchgear and protection',
-        banner: 'https://example.com/switchgear.png',
+        bannerUrl: 'https://example.com/switchgear.png',
       })
       .expect(201);
 
-    // 2. Active category B (should sort after Switchgear or before depending on name)
+    // 2. Active category B
     await api()
       .post('/api/v1/categories')
       .set(admin.auth)
       .send({
         name: 'Automation & Control',
-        seoUrl: 'automation-and-control',
+        slug: 'automation-and-control',
         description: 'Sensors and controllers',
       })
       .expect(201);
@@ -132,7 +131,7 @@ describe('Public Category APIs', () => {
       .set(admin.auth)
       .send({
         name: 'Legacy Motors',
-        seoUrl: 'legacy-motors',
+        slug: 'legacy-motors',
       })
       .expect(201);
     await api().delete(`/api/v1/categories/${deleted.body.data.id}`).set(admin.auth).expect(204);
@@ -151,8 +150,8 @@ describe('Public Category APIs', () => {
     for (const item of res.body.data) {
       expect(item).toHaveProperty('id');
       expect(item).toHaveProperty('name');
-      expect(item).toHaveProperty('seoUrl');
-      expect(item).toHaveProperty('banner');
+      expect(item).toHaveProperty('slug');
+      expect(item).toHaveProperty('bannerUrl');
       expect(item).toHaveProperty('description');
 
       expect(item).not.toHaveProperty('createdAt');
@@ -163,24 +162,24 @@ describe('Public Category APIs', () => {
     }
   });
 
-  it('GET /api/v1/public/categories/:seoUrl returns category details for valid SEO URL', async () => {
+  it('GET /api/v1/public/categories/:slug returns category details for valid slug', async () => {
     const res = await api().get('/api/v1/public/categories/switchgear').expect(200);
     expect(res.body.success).toBe(true);
     expect(res.body.data.name).toBe('Switchgear');
-    expect(res.body.data.seoUrl).toBe('switchgear');
-    expect(res.body.data.banner).toBe('https://example.com/switchgear.png');
+    expect(res.body.data.slug).toBe('switchgear');
+    expect(res.body.data.bannerUrl).toBe('https://example.com/switchgear.png');
   });
 
-  it('GET /api/v1/public/categories/:seoUrl returns 404 for deleted category', async () => {
+  it('GET /api/v1/public/categories/:slug returns 404 for deleted category', async () => {
     await api().get('/api/v1/public/categories/legacy-motors').expect(404);
   });
 
-  it('GET /api/v1/public/categories/:seoUrl returns 404 for nonexistent SEO URL', async () => {
+  it('GET /api/v1/public/categories/:slug returns 404 for nonexistent slug', async () => {
     await api().get('/api/v1/public/categories/non-existent-category').expect(404);
   });
 
-  it('GET /api/v1/public/categories/:seoUrl rejects invalid SEO URL formats with 400', async () => {
-    await api().get('/api/v1/public/categories/INVALID_SEO_URL!').expect(400);
+  it('GET /api/v1/public/categories/:slug rejects invalid slug formats with 400', async () => {
+    await api().get('/api/v1/public/categories/INVALID_SLUG!').expect(400);
   });
 });
 
@@ -192,9 +191,9 @@ describe('POST /api/v1/categories (Create Category)', () => {
     expect(res.body.data).toMatchObject({
       id: expect.any(String),
       name: sampleCategory.name,
-      seoUrl: sampleCategory.seoUrl,
+      slug: sampleCategory.slug,
       description: sampleCategory.description,
-      banner: sampleCategory.banner,
+      bannerUrl: sampleCategory.bannerUrl,
       createdAt: expect.any(String),
       updatedAt: expect.any(String),
     });
@@ -209,10 +208,10 @@ describe('POST /api/v1/categories (Create Category)', () => {
     const res = await api()
       .post('/api/v1/categories')
       .set(admin.auth)
-      .send({ name: 'Robotics', seoUrl: 'robotics' })
+      .send({ name: 'Robotics', slug: 'robotics' })
       .expect(201);
 
-    expect(res.body.data.banner).toBeNull();
+    expect(res.body.data.bannerUrl).toBeNull();
     expect(res.body.data.description).toBeNull();
   });
 
@@ -220,7 +219,7 @@ describe('POST /api/v1/categories (Create Category)', () => {
     const res = await api()
       .post('/api/v1/categories')
       .set(admin.auth)
-      .send({ seoUrl: 'only-seo-url' })
+      .send({ slug: 'only-slug' })
       .expect(400);
 
     expect(res.body.success).toBe(false);
@@ -231,36 +230,36 @@ describe('POST /api/v1/categories (Create Category)', () => {
     await api()
       .post('/api/v1/categories')
       .set(admin.auth)
-      .send({ name: '   ', seoUrl: 'valid-seo-url' })
+      .send({ name: '   ', slug: 'valid-slug' })
       .expect(400);
   });
 
-  it('rejects create category with missing SEO URL (400)', async () => {
+  it('rejects create category with missing slug (400)', async () => {
     const res = await api()
       .post('/api/v1/categories')
       .set(admin.auth)
-      .send({ name: 'Missing SEO' })
+      .send({ name: 'Missing Slug' })
       .expect(400);
 
     expect(res.body.success).toBe(false);
     expect(res.body.error.code).toBe('VALIDATION_ERROR');
   });
 
-  it('rejects create category with invalid SEO URL format (400)', async () => {
+  it('rejects create category with invalid slug format (400)', async () => {
     await api()
       .post('/api/v1/categories')
       .set(admin.auth)
-      .send({ name: 'Valid Name', seoUrl: 'Invalid SEO URL With Spaces' })
+      .send({ name: 'Valid Name', slug: 'Invalid Slug With Spaces' })
       .expect(400);
 
     await api()
       .post('/api/v1/categories')
       .set(admin.auth)
-      .send({ name: 'Valid Name', seoUrl: 'UPPERCASE' })
+      .send({ name: 'Valid Name', slug: 'UPPERCASE' })
       .expect(400);
   });
 
-  it('rejects duplicate SEO URL on active category with 409', async () => {
+  it('rejects duplicate slug on active category with 409', async () => {
     await api().post('/api/v1/categories').set(admin.auth).send(sampleCategory).expect(201);
 
     const res = await api()
@@ -268,14 +267,14 @@ describe('POST /api/v1/categories (Create Category)', () => {
       .set(admin.auth)
       .send({
         name: 'Another Automation Category',
-        seoUrl: sampleCategory.seoUrl,
+        slug: sampleCategory.slug,
       })
       .expect(409);
 
-    expect(res.body.error.code).toBe(CategoriesErrorCode.SEO_URL_TAKEN);
+    expect(res.body.error.code).toBe(CategoriesErrorCode.SLUG_TAKEN);
   });
 
-  it('rejects duplicate SEO URL on soft-deleted category with 409 suggesting restore', async () => {
+  it('rejects duplicate slug on soft-deleted category with 409 suggesting restore', async () => {
     const created = await api().post('/api/v1/categories').set(admin.auth).send(sampleCategory).expect(201);
     await api().delete(`/api/v1/categories/${created.body.data.id}`).set(admin.auth).expect(204);
 
@@ -284,11 +283,11 @@ describe('POST /api/v1/categories (Create Category)', () => {
       .set(admin.auth)
       .send({
         name: 'Recreating Same Automation',
-        seoUrl: sampleCategory.seoUrl,
+        slug: sampleCategory.slug,
       })
       .expect(409);
 
-    expect(res.body.error.code).toBe(CategoriesErrorCode.SEO_URL_BELONGS_TO_DELETED_CATEGORY);
+    expect(res.body.error.code).toBe(CategoriesErrorCode.SLUG_BELONGS_TO_DELETED_CATEGORY);
     expect(res.body.error.details.categoryId).toBe(created.body.data.id);
   });
 });
@@ -301,7 +300,7 @@ describe('GET /api/v1/categories (List Categories)', () => {
         .set(admin.auth)
         .send({
           name: `Category ${String(i).padStart(2, '0')}`,
-          seoUrl: `category-${String(i).padStart(2, '0')}`,
+          slug: `category-${String(i).padStart(2, '0')}`,
           description: `Description for ${i}`,
         })
         .expect(201);
@@ -330,11 +329,11 @@ describe('GET /api/v1/categories (List Categories)', () => {
     expect(res.body.data[0].name).toBe('Category 05');
   });
 
-  it('searches categories by SEO URL', async () => {
+  it('searches categories by slug', async () => {
     const res = await api().get('/api/v1/categories?search=category-12').set(admin.auth).expect(200);
 
     expect(res.body.data).toHaveLength(1);
-    expect(res.body.data[0].seoUrl).toBe('category-12');
+    expect(res.body.data[0].slug).toBe('category-12');
   });
 
   it('sorts categories by name ASC and DESC', async () => {
@@ -367,8 +366,8 @@ describe('GET /api/v1/categories/:id (Get Category by ID)', () => {
     expect(res.body.success).toBe(true);
     expect(res.body.data.id).toBe(created.body.data.id);
     expect(res.body.data.name).toBe(sampleCategory.name);
-    expect(res.body.data.seoUrl).toBe(sampleCategory.seoUrl);
-    expect(res.body.data.banner).toBe(sampleCategory.banner);
+    expect(res.body.data.slug).toBe(sampleCategory.slug);
+    expect(res.body.data.bannerUrl).toBe(sampleCategory.bannerUrl);
     expect(res.body.data.description).toBe(sampleCategory.description);
     expect(res.body.data.createdAt).toBeDefined();
     expect(res.body.data.updatedAt).toBeDefined();
@@ -391,7 +390,7 @@ describe('GET /api/v1/categories/:id (Get Category by ID)', () => {
   });
 });
 
-describe('PATCH & PUT /api/v1/categories/:id (Update Category)', () => {
+describe('PATCH /api/v1/categories/:id (Update Category)', () => {
   it('updates category successfully via PATCH', async () => {
     const created = await api().post('/api/v1/categories').set(admin.auth).send(sampleCategory).expect(201);
     const id = created.body.data.id;
@@ -407,27 +406,22 @@ describe('PATCH & PUT /api/v1/categories/:id (Update Category)', () => {
 
     expect(res.body.data.name).toBe('Advanced Automation');
     expect(res.body.data.description).toBe('Updated description');
-    expect(res.body.data.seoUrl).toBe(sampleCategory.seoUrl); // Unchanged field preserved
+    expect(res.body.data.slug).toBe(sampleCategory.slug); // Unchanged field preserved
   });
 
-  it('updates category successfully via PUT', async () => {
+  it('confirms normal PUT /api/v1/categories/:id has been removed', async () => {
     const created = await api().post('/api/v1/categories').set(admin.auth).send(sampleCategory).expect(201);
     const id = created.body.data.id;
 
-    const res = await api()
+    // Normal PUT is no longer routed; returns 404 (Not Found)
+    await api()
       .put(`/api/v1/categories/${id}`)
       .set(admin.auth)
-      .send({
-        name: 'PUT Updated Category',
-        seoUrl: 'put-updated-category',
-      })
-      .expect(200);
-
-    expect(res.body.data.name).toBe('PUT Updated Category');
-    expect(res.body.data.seoUrl).toBe('put-updated-category');
+      .send({ name: 'PUT Not Supported' })
+      .expect(404);
   });
 
-  it('allows updating category with its own SEO URL without conflict', async () => {
+  it('allows updating category with its own slug without conflict', async () => {
     const created = await api().post('/api/v1/categories').set(admin.auth).send(sampleCategory).expect(201);
     const id = created.body.data.id;
 
@@ -435,30 +429,30 @@ describe('PATCH & PUT /api/v1/categories/:id (Update Category)', () => {
       .patch(`/api/v1/categories/${id}`)
       .set(admin.auth)
       .send({
-        name: 'New Name Same SEO',
-        seoUrl: sampleCategory.seoUrl,
+        name: 'New Name Same Slug',
+        slug: sampleCategory.slug,
       })
       .expect(200);
 
-    expect(res.body.data.name).toBe('New Name Same SEO');
+    expect(res.body.data.name).toBe('New Name Same Slug');
   });
 
-  it('rejects update with duplicate SEO URL belonging to another category with 409', async () => {
+  it('rejects update with duplicate slug belonging to another category with 409', async () => {
     await api().post('/api/v1/categories').set(admin.auth).send(sampleCategory).expect(201);
 
     const category2 = await api()
       .post('/api/v1/categories')
       .set(admin.auth)
-      .send({ name: 'Robotics', seoUrl: 'robotics' })
+      .send({ name: 'Robotics', slug: 'robotics' })
       .expect(201);
 
     const res = await api()
       .patch(`/api/v1/categories/${category2.body.data.id}`)
       .set(admin.auth)
-      .send({ seoUrl: sampleCategory.seoUrl })
+      .send({ slug: sampleCategory.slug })
       .expect(409);
 
-    expect(res.body.error.code).toBe(CategoriesErrorCode.SEO_URL_TAKEN);
+    expect(res.body.error.code).toBe(CategoriesErrorCode.SLUG_TAKEN);
   });
 
   it('rejects empty update body with 400', async () => {
@@ -534,7 +528,7 @@ describe('DELETE /api/v1/categories/:id & Restore', () => {
   });
 });
 
-describe('Banner Upload & Handling', () => {
+describe('Banner Upload & Handling (PUT /api/v1/categories/:id/banner)', () => {
   it('uploads valid banner image (PNG) via PUT /api/v1/categories/:id/banner', async () => {
     const created = await api().post('/api/v1/categories').set(admin.auth).send(sampleCategory).expect(201);
     const id = created.body.data.id;
@@ -546,11 +540,11 @@ describe('Banner Upload & Handling', () => {
       .expect(200);
 
     expect(res.body.success).toBe(true);
-    expect(res.body.data.banner).toMatch(/\/categories\/banners\/.*\.png$/);
+    expect(res.body.data.bannerUrl).toMatch(/\/categories\/banners\/.*\.png$/);
 
     // Verify in DB
     const inDb = await prisma.category.findUniqueOrThrow({ where: { id } });
-    expect(inDb.banner).toBe(res.body.data.banner);
+    expect(inDb.bannerUrl).toBe(res.body.data.bannerUrl);
   });
 
   it('uploads valid banner image (JPEG) via PUT /api/v1/categories/:id/banner', async () => {
@@ -564,7 +558,7 @@ describe('Banner Upload & Handling', () => {
       .expect(200);
 
     expect(res.body.success).toBe(true);
-    expect(res.body.data.banner).toMatch(/\/categories\/banners\/.*\.jpg$/);
+    expect(res.body.data.bannerUrl).toMatch(/\/categories\/banners\/.*\.jpg$/);
   });
 
   it('rejects empty file upload with 400', async () => {
@@ -621,10 +615,10 @@ describe('Banner Upload & Handling', () => {
     const res = await api().delete(`/api/v1/categories/${id}/banner`).set(admin.auth).expect(200);
 
     expect(res.body.success).toBe(true);
-    expect(res.body.data.banner).toBeNull();
+    expect(res.body.data.bannerUrl).toBeNull();
 
     const inDb = await prisma.category.findUniqueOrThrow({ where: { id } });
-    expect(inDb.banner).toBeNull();
+    expect(inDb.bannerUrl).toBeNull();
   });
 
   it('returns 404 when uploading banner for nonexistent category', async () => {
@@ -641,21 +635,24 @@ describe('Swagger Endpoint & Database Validation', () => {
     const res = await api().get('/api/docs.json').expect(200);
     expect(res.body.paths).toHaveProperty('/categories');
     expect(res.body.paths).toHaveProperty('/categories/{id}');
+    expect(res.body.paths['/categories/{id}']).not.toHaveProperty('put'); // PUT /categories/{id} removed
+    expect(res.body.paths['/categories/{id}']).toHaveProperty('patch'); // PATCH preserved
     expect(res.body.paths).toHaveProperty('/categories/{id}/banner');
+    expect(res.body.paths['/categories/{id}/banner']).toHaveProperty('put'); // PUT /banner preserved
     expect(res.body.paths).toHaveProperty('/categories/{id}/restore');
     expect(res.body.paths).toHaveProperty('/public/categories');
-    expect(res.body.paths).toHaveProperty('/public/categories/{seoUrl}');
+    expect(res.body.paths).toHaveProperty('/public/categories/{slug}'); // slug path parameter
   });
 
   it('serves Swagger UI at /api/docs', async () => {
     await api().get('/api/docs/').expect(200);
   });
 
-  it('enforces database level unique constraint on seo_url', async () => {
+  it('enforces database level unique constraint on slug', async () => {
     await prisma.category.create({
       data: {
         name: 'Database Direct 1',
-        seoUrl: 'unique-seo-db',
+        slug: 'unique-slug-db',
       },
     });
 
@@ -663,7 +660,7 @@ describe('Swagger Endpoint & Database Validation', () => {
       prisma.category.create({
         data: {
           name: 'Database Direct 2',
-          seoUrl: 'unique-seo-db',
+          slug: 'unique-slug-db',
         },
       })
     ).rejects.toThrow();

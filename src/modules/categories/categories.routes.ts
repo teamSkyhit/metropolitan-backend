@@ -14,7 +14,6 @@ categoriesRouter.get('/', authorize(Permission.CATEGORIES_READ), categoriesContr
 categoriesRouter.post('/', authorize(Permission.CATEGORIES_CREATE), categoriesController.create);
 categoriesRouter.get('/:id', authorize(Permission.CATEGORIES_READ), categoriesController.getById);
 categoriesRouter.patch('/:id', authorize(Permission.CATEGORIES_UPDATE), categoriesController.update);
-categoriesRouter.put('/:id', authorize(Permission.CATEGORIES_UPDATE), categoriesController.update);
 categoriesRouter.delete('/:id', authorize(Permission.CATEGORIES_DELETE), categoriesController.remove);
 categoriesRouter.post('/:id/restore', authorize(Permission.CATEGORIES_UPDATE), categoriesController.restore);
 
@@ -40,4 +39,4 @@ categoriesRouter.delete(
 export const categoriesPublicRouter = Router();
 
 categoriesPublicRouter.get('/', categoriesController.listPublic);
-categoriesPublicRouter.get('/:seoUrl', categoriesController.getBySeoUrlPublic);
+categoriesPublicRouter.get('/:slug', categoriesController.getBySlugPublic);
