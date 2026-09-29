@@ -1,4 +1,4 @@
-import type { z } from 'zod';
+import { z } from 'zod';
 import {
   BEARER_AUTH,
   errorResponses,
@@ -13,12 +13,22 @@ import {
   listProductsQuerySchema,
   productSchema,
   updateProductBodySchema,
+  updateProductSpecificationsBodySchema,
 } from './products.schema';
 
 export function registerProductsDocs(registry: OpenAPIRegistry): void {
   const adminTags = ['Products'];
   const security = [{ [BEARER_AUTH]: [] }];
   const json = (schema: z.ZodType) => ({ content: { 'application/json': { schema } } });
+  const multipart = () => ({
+    content: {
+      'multipart/form-data': {
+        schema: z.object({
+          file: z.string().meta({ format: 'binary', description: 'PNG, JPEG, or WebP image (max 5 MB)' }),
+        }),
+      },
+    },
+  });
 
   // ── Admin Endpoints ────────────────────────────────────────────────────────
 
@@ -104,6 +114,50 @@ export function registerProductsDocs(registry: OpenAPIRegistry): void {
     responses: {
       200: jsonResponse('Restored product', successBody(productSchema)),
       ...errorResponses(400, 401, 403, 404, 409),
+    },
+  });
+
+  registry.registerPath({
+    method: 'put',
+    path: '/products/{id}/image',
+    tags: adminTags,
+    security,
+    summary: 'Upload product primary image',
+    description:
+      'Requires `products:update`. Accepts multipart/form-data. Maximum size 5 MB. PNG, JPEG, or WebP.',
+    request: { params: idParamsSchema, body: multipart() },
+    responses: {
+      200: jsonResponse('Image uploaded', successBody(productSchema)),
+      ...errorResponses(400, 401, 403, 404),
+    },
+  });
+
+  registry.registerPath({
+    method: 'delete',
+    path: '/products/{id}/image',
+    tags: adminTags,
+    security,
+    summary: 'Remove product primary image',
+    description: 'Requires `products:update`. Clears the product image reference and removes stored file.',
+    request: { params: idParamsSchema },
+    responses: {
+      200: jsonResponse('Image removed', successBody(productSchema)),
+      ...errorResponses(400, 401, 403, 404),
+    },
+  });
+
+  registry.registerPath({
+    method: 'put',
+    path: '/products/{id}/specifications',
+    tags: adminTags,
+    security,
+    summary: 'Update product specifications',
+    description:
+      'Requires `products:update`. Accepts structured specifications list (key, value, optional unit).',
+    request: { params: idParamsSchema, body: json(updateProductSpecificationsBodySchema) },
+    responses: {
+      200: jsonResponse('Specifications updated', successBody(productSchema)),
+      ...errorResponses(400, 401, 403, 404),
     },
   });
 }

@@ -231,7 +231,7 @@ export const categoriesService = {
     validateFileSize(file.size, UPLOAD_LIMITS.BANNER_MAX_BYTES, 'Banner');
     const validated = validateImageContent(file.buffer);
 
-    if (category.bannerUrl) {
+    if (category.bannerUrl && !category.bannerUrl.includes('/media/')) {
       await storageService.delete(category.bannerUrl);
     }
 
@@ -253,11 +253,15 @@ export const categoriesService = {
     const category = await categoriesRepository.findById(id);
     if (!category) throw AppError.notFound('Category');
 
-    if (category.bannerUrl) {
+    if (category.bannerUrl && !category.bannerUrl.includes('/media/')) {
       await storageService.delete(category.bannerUrl);
     }
 
     const updated = await categoriesRepository.updateBanner(id, null, actorId);
     return toCategoryDto(updated);
+  },
+
+  async isMediaUrlReferenced(url: string): Promise<boolean> {
+    return categoriesRepository.isMediaUrlReferenced(url);
   },
 };

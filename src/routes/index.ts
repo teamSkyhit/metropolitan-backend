@@ -6,7 +6,8 @@ import { enquiriesModule } from '../modules/enquiries';
 import { healthModule } from '../modules/health';
 import { usersModule, usersService } from '../modules/users';
 import { categoriesModule, categoriesService } from '../modules/categories';
-import { productsModule, registerProductAssignValidation } from '../modules/products';
+import { mediaModule, registerMediaReferenceCheckers } from '../modules/media';
+import { productsModule, productsService, registerProductAssignValidation } from '../modules/products';
 import type { AppModule } from '../shared/module';
 
 /**
@@ -21,6 +22,7 @@ export const modules: readonly AppModule[] = [
   brandsModule,
   categoriesModule,
   productsModule,
+  mediaModule,
   // @generator:modules
 ];
 
@@ -32,6 +34,12 @@ registerProductAssignValidation({
   brandsService,
   categoriesService,
 });
+
+registerMediaReferenceCheckers([
+  { name: 'Product', checker: (url) => productsService.isMediaUrlReferenced(url) },
+  { name: 'Brand', checker: (url) => brandsService.isMediaUrlReferenced(url) },
+  { name: 'Category', checker: (url) => categoriesService.isMediaUrlReferenced(url) },
+]);
 
 /** Builds the /api/v1 router from the module list. */
 export function createApiRouter(): Router {

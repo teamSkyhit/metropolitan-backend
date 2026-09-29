@@ -58,6 +58,17 @@ export const categoriesRepository = {
     });
   },
 
+  isMediaUrlReferenced(url: string): Promise<boolean> {
+    return prisma.category
+      .count({
+        where: {
+          bannerUrl: url,
+          ...notDeleted,
+        },
+      })
+      .then((count) => count > 0);
+  },
+
   async findMany(query: ListCategoriesQuery): Promise<{ items: Category[]; total: number }> {
     const where: Prisma.CategoryWhereInput = {
       ...notDeleted,

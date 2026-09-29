@@ -201,7 +201,7 @@ export const brandsService = {
     validateFileSize(file.size, UPLOAD_LIMITS.LOGO_MAX_BYTES, 'Logo');
     const validated = validateImageContent(file.buffer);
 
-    if (brand.logoUrl) {
+    if (brand.logoUrl && !brand.logoUrl.includes('/media/')) {
       await storageService.delete(brand.logoUrl);
     }
 
@@ -223,7 +223,7 @@ export const brandsService = {
     const brand = await brandsRepository.findById(id);
     if (!brand) throw AppError.notFound('Brand');
 
-    if (brand.logoUrl) {
+    if (brand.logoUrl && !brand.logoUrl.includes('/media/')) {
       await storageService.delete(brand.logoUrl);
     }
 
@@ -238,7 +238,7 @@ export const brandsService = {
     validateFileSize(file.size, UPLOAD_LIMITS.BANNER_MAX_BYTES, 'Banner');
     const validated = validateImageContent(file.buffer);
 
-    if (brand.bannerUrl) {
+    if (brand.bannerUrl && !brand.bannerUrl.includes('/media/')) {
       await storageService.delete(brand.bannerUrl);
     }
 
@@ -260,11 +260,15 @@ export const brandsService = {
     const brand = await brandsRepository.findById(id);
     if (!brand) throw AppError.notFound('Brand');
 
-    if (brand.bannerUrl) {
+    if (brand.bannerUrl && !brand.bannerUrl.includes('/media/')) {
       await storageService.delete(brand.bannerUrl);
     }
 
     const updated = await brandsRepository.updateBanner(id, null, actorId);
     return toBrandDto(updated);
+  },
+
+  async isMediaUrlReferenced(url: string): Promise<boolean> {
+    return brandsRepository.isMediaUrlReferenced(url);
   },
 };

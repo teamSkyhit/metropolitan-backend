@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { authenticate, authorize } from '../../middleware';
 import { Permission } from '../../shared/security/permissions';
+import { requireFileUpload, UPLOAD_LIMITS } from '../../shared/storage';
 import { productsController } from './products.controller';
 
 export const productsRouter = Router();
@@ -15,3 +16,23 @@ productsRouter.get('/:id', authorize(Permission.PRODUCTS_READ), productsControll
 productsRouter.patch('/:id', authorize(Permission.PRODUCTS_UPDATE), productsController.update);
 productsRouter.delete('/:id', authorize(Permission.PRODUCTS_DELETE), productsController.remove);
 productsRouter.post('/:id/restore', authorize(Permission.PRODUCTS_UPDATE), productsController.restore);
+
+// Media routes
+productsRouter.put(
+  '/:id/image',
+  authorize(Permission.PRODUCTS_UPDATE),
+  requireFileUpload({
+    maxBytes: UPLOAD_LIMITS.PRODUCT_IMAGE_MAX_BYTES,
+    fieldNames: ['file', 'image'],
+    entityName: 'Product image',
+  }),
+  productsController.uploadImage
+);
+productsRouter.delete('/:id/image', authorize(Permission.PRODUCTS_UPDATE), productsController.removeImage);
+
+// Specifications route
+productsRouter.put(
+  '/:id/specifications',
+  authorize(Permission.PRODUCTS_UPDATE),
+  productsController.updateSpecifications
+);

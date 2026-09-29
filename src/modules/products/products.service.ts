@@ -1,6 +1,8 @@
+import { randomUUID } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import { AppError } from '../../shared/errors';
 import { buildPaginationMeta, type Paginated } from '../../shared/http';
+import { storageService, UPLOAD_LIMITS, validateFileSize, validateImageContent } from '../../shared/storage';
 import { productsRepository, type ProductRecord } from './products.repository';
 import {
   normalizeSku,
@@ -8,6 +10,7 @@ import {
   type CreateProductBody,
   type ListProductsQuery,
   type ProductDto,
+  type ProductSpecificationItem,
   type UpdateProductBody,
 } from './products.schema';
 
@@ -36,6 +39,10 @@ export function toProductDto(record: ProductRecord): ProductDto {
     priceVisibility: record.priceVisibility,
     status: record.status,
     hotDeal: record.hotDeal,
+    imageUrl: record.imageUrl ?? null,
+    specifications: Array.isArray(record.specifications)
+      ? (record.specifications as unknown as ProductSpecificationItem[])
+      : null,
     brand: record.brand
       ? {
           id: record.brand.id,
@@ -190,5 +197,63 @@ export const productsService = {
     }
     const restored = await productsRepository.restore(id, actorId);
     return toProductDto(restored);
+  },
+
+  async uploadImage(id: string, file: Express.Multer.File, actorId: string): Promise<ProductDto> {
+    const product = await productsRepository.findById(id);
+    if (!product) throw AppError.notFound('Product');
+
+    validateFileSize(file.size, UPLOAD_LIMITS.PRODUCT_IMAGE_MAX_BYTES, 'Product image');
+    const validated = validateImageContent(file.buffer);
+
+    const oldImageUrl = product.imageUrl;
+
+    const stored = await storageService.upload(
+      {
+        filename: `${randomUUID()}${validated.extension}`,
+        buffer: file.buffer,
+        mimeType: validated.mimeType,
+        size: file.size,
+      },
+      'products/images'
+    );
+
+    const updated = await productsRepository.updateImage(id, stored.url, actorId);
+
+    if (oldImageUrl && !oldImageUrl.includes('/media/')) {
+      await storageService.delete(oldImageUrl).catch(() => {});
+    }
+
+    return toProductDto(updated);
+  },
+
+  async removeImage(id: string, actorId: string): Promise<ProductDto> {
+    const product = await productsRepository.findById(id);
+    if (!product) throw AppError.notFound('Product');
+
+    const oldImageUrl = product.imageUrl;
+    const updated = await productsRepository.updateImage(id, null, actorId);
+
+    if (oldImageUrl && !oldImageUrl.includes('/media/')) {
+      await storageService.delete(oldImageUrl).catch(() => {});
+    }
+
+    return toProductDto(updated);
+  },
+
+  async updateSpecifications(
+    id: string,
+    specifications: ProductSpecificationItem[],
+    actorId: string
+  ): Promise<ProductDto> {
+    const product = await productsRepository.findById(id);
+    if (!product) throw AppError.notFound('Product');
+
+    const updated = await productsRepository.updateSpecifications(id, specifications, actorId);
+    return toProductDto(updated);
+  },
+
+  async isMediaUrlReferenced(url: string): Promise<boolean> {
+    return productsRepository.isMediaUrlReferenced(url);
   },
 };

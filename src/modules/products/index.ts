@@ -29,6 +29,9 @@ export {
   productStatusSchema,
   productBrandSummarySchema,
   productCategorySummarySchema,
+  productSpecificationItemSchema,
+  productSpecificationsSchema,
+  updateProductSpecificationsBodySchema,
   skuRegex,
   normalizeSku,
   productSkuSchema,
@@ -41,4 +44,6 @@ export {
   type CreateProductBody,
   type UpdateProductBody,
   type ListProductsQuery,
+  type ProductSpecificationItem,
+  type UpdateProductSpecificationsBody,
 } from './products.schema';
