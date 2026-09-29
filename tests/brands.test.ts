@@ -573,6 +573,39 @@ describe('DELETE /api/v1/brands/:id', () => {
     await api().delete(`/api/v1/brands/${id}`).set(admin.auth).expect(204);
     await api().delete(`/api/v1/brands/${id}`).set(admin.auth).expect(404);
   });
+
+  it('rejects deleting a brand that has live products with 409 BRANDS_HAS_PRODUCTS', async () => {
+    const brand = await api().post('/api/v1/brands').set(admin.auth).send(sampleBrand).expect(201);
+    const category = await api()
+      .post('/api/v1/categories')
+      .set(admin.auth)
+      .send({ name: 'Motors', slug: 'motors' })
+      .expect(201);
+
+    const product = await api()
+      .post('/api/v1/products')
+      .set(admin.auth)
+      .send({
+        name: 'Electric Motor 5HP',
+        sku: 'MTR-5HP-01',
+        brandId: brand.body.data.id,
+        categoryId: category.body.data.id,
+      })
+      .expect(201);
+
+    const res = await api().delete(`/api/v1/brands/${brand.body.data.id}`).set(admin.auth).expect(409);
+    expect(res.body.error.code).toBe(BrandsErrorCode.HAS_PRODUCTS);
+
+    // Verify brand is not deleted
+    const brandRow = await prisma.brand.findUniqueOrThrow({ where: { id: brand.body.data.id } });
+    expect(brandRow.deletedAt).toBeNull();
+
+    // Soft-delete the product
+    await api().delete(`/api/v1/products/${product.body.data.id}`).set(admin.auth).expect(204);
+
+    // Now brand deletion succeeds because products are soft-deleted
+    await api().delete(`/api/v1/brands/${brand.body.data.id}`).set(admin.auth).expect(204);
+  });
 });
 
 describe('POST /api/v1/brands/:id/restore', () => {

@@ -1,11 +1,12 @@
 import { Router } from 'express';
 import { registerAuthUserResolver } from '../middleware';
 import { authModule } from '../modules/auth';
-import { brandsModule } from '../modules/brands';
+import { brandsModule, brandsService } from '../modules/brands';
 import { enquiriesModule } from '../modules/enquiries';
 import { healthModule } from '../modules/health';
 import { usersModule, usersService } from '../modules/users';
-import { categoriesModule } from '../modules/categories';
+import { categoriesModule, categoriesService } from '../modules/categories';
+import { productsModule, registerProductAssignValidation } from '../modules/products';
 import type { AppModule } from '../shared/module';
 
 /**
@@ -19,11 +20,18 @@ export const modules: readonly AppModule[] = [
   enquiriesModule,
   brandsModule,
   categoriesModule,
+  productsModule,
   // @generator:modules
 ];
 
 // `authenticate()` looks users up through the users module.
 registerAuthUserResolver(usersService.resolveAuthState);
+
+// Wire cross-module validation through service boundaries without circular module dependencies.
+registerProductAssignValidation({
+  brandsService,
+  categoriesService,
+});
 
 /** Builds the /api/v1 router from the module list. */
 export function createApiRouter(): Router {

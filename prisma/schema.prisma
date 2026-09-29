@@ -189,6 +189,8 @@ model Brand {
   createdById String?   @map("created_by_id") @db.Uuid
   updatedById String?   @map("updated_by_id") @db.Uuid
 
+  products Product[]
+
   @@index([deletedAt, sortOrder, name])
   @@index([deletedAt, isActive])
   @@index([name])
@@ -214,6 +216,7 @@ model Category {
 
   parent   Category?  @relation("CategoryParent", fields: [parentId], references: [id], onDelete: Restrict)
   children Category[] @relation("CategoryParent")
+  products Product[]
 
   @@index([deletedAt, sortOrder, name])
   @@index([deletedAt, isActive])
@@ -223,4 +226,38 @@ model Category {
   @@map("categories")
 }
 
+enum ProductStatus {
+  DRAFT
+  PUBLISHED
+}
 
+/// Product representation.
+model Product {
+  id              String        @id @default(uuid()) @db.Uuid
+  name            String        @db.VarChar(200)
+  sku             String        @unique @db.VarChar(100)
+  brandId         String        @map("brand_id") @db.Uuid
+  categoryId      String        @map("category_id") @db.Uuid
+  description     String?       @db.Text
+  price           Decimal?      @db.Decimal(12, 2)
+  priceVisibility Boolean       @default(true) @map("price_visibility")
+  status          ProductStatus @default(DRAFT)
+  hotDeal         Boolean       @default(false) @map("hot_deal")
+  createdAt       DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt       DateTime?     @map("deleted_at") @db.Timestamptz(3)
+  createdById     String?       @map("created_by_id") @db.Uuid
+  updatedById     String?       @map("updated_by_id") @db.Uuid
+
+  brand    Brand    @relation(fields: [brandId], references: [id], onDelete: Restrict)
+  category Category @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+
+  @@index([brandId])
+  @@index([categoryId])
+  @@index([status])
+  @@index([hotDeal])
+  @@index([deletedAt, createdAt])
+  @@index([name])
+  @@index([sku])
+  @@map("products")
+}

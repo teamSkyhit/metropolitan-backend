@@ -7,6 +7,7 @@ export const BrandsErrorCode = {
   NAME_BELONGS_TO_DELETED_BRAND: 'BRANDS_NAME_BELONGS_TO_DELETED_BRAND',
   SLUG_BELONGS_TO_DELETED_BRAND: 'BRANDS_SLUG_BELONGS_TO_DELETED_BRAND',
   NOT_DELETED: 'BRANDS_NOT_DELETED',
+  HAS_PRODUCTS: 'BRANDS_HAS_PRODUCTS',
 } as const;
 
 export type BrandsErrorCode = (typeof BrandsErrorCode)[keyof typeof BrandsErrorCode];

@@ -9,6 +9,7 @@ export const CategoriesErrorCode = {
   NOT_DELETED: 'CATEGORIES_NOT_DELETED',
   INVALID_PARENT: 'CATEGORIES_INVALID_PARENT',
   CIRCULAR_PARENT: 'CATEGORIES_CIRCULAR_PARENT',
+  HAS_PRODUCTS: 'CATEGORIES_HAS_PRODUCTS',
 } as const;
 
 export type CategoriesErrorCode = (typeof CategoriesErrorCode)[keyof typeof CategoriesErrorCode];
