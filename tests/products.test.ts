@@ -336,6 +336,74 @@ describe('Product Creation & Validation', () => {
     expect(res.body.error.code).toBe(ProductsErrorCode.CATEGORY_UNAVAILABLE);
   });
 
+  it('normalizes SKU to uppercase before persistence', async () => {
+    const brand = await createTestBrand();
+    const category = await createTestCategory();
+
+    const res = await api()
+      .post('/api/v1/products')
+      .set(admin.auth)
+      .send(sampleProductPayload(brand.id, category.id, { sku: 'cr-10' }))
+      .expect(201);
+
+    expect(res.body.data.sku).toBe('CR-10');
+
+    const inDb = await prisma.product.findUniqueOrThrow({ where: { id: res.body.data.id } });
+    expect(inDb.sku).toBe('CR-10');
+  });
+
+  it('rejects duplicate SKU case-insensitively (cr-10 and CR-10 conflict)', async () => {
+    const brand = await createTestBrand();
+    const category = await createTestCategory();
+
+    await api()
+      .post('/api/v1/products')
+      .set(admin.auth)
+      .send(sampleProductPayload(brand.id, category.id, { sku: 'CR-10' }))
+      .expect(201);
+
+    const res = await api()
+      .post('/api/v1/products')
+      .set(admin.auth)
+      .send(sampleProductPayload(brand.id, category.id, { sku: 'cr-10' }))
+      .expect(409);
+
+    expect(res.body.error.code).toBe(ProductsErrorCode.SKU_TAKEN);
+  });
+
+  it('rejects invalid SKU formats containing spaces, HTML, or unsupported special characters', async () => {
+    const brand = await createTestBrand();
+    const category = await createTestCategory();
+
+    // Spaces
+    await api()
+      .post('/api/v1/products')
+      .set(admin.auth)
+      .send(sampleProductPayload(brand.id, category.id, { sku: 'CR 10' }))
+      .expect(400);
+
+    // HTML / Script characters
+    await api()
+      .post('/api/v1/products')
+      .set(admin.auth)
+      .send(sampleProductPayload(brand.id, category.id, { sku: 'CR<script>' }))
+      .expect(400);
+
+    // Unsupported special characters
+    await api()
+      .post('/api/v1/products')
+      .set(admin.auth)
+      .send(sampleProductPayload(brand.id, category.id, { sku: 'CR@#$10' }))
+      .expect(400);
+
+    // Starting with non-alphanumeric
+    await api()
+      .post('/api/v1/products')
+      .set(admin.auth)
+      .send(sampleProductPayload(brand.id, category.id, { sku: '-CR10' }))
+      .expect(400);
+  });
+
   it('rejects duplicate SKU on active product with 409 PRODUCTS_SKU_TAKEN', async () => {
     const brand = await createTestBrand();
     const category = await createTestCategory();
@@ -780,6 +848,39 @@ describe('Product Partial Updates (PATCH)', () => {
       .expect(200);
 
     expect(res.body.data.sku).toBe('NEW-SKU-456');
+  });
+
+  it('normalizes SKU to uppercase upon PATCH and enforces case-insensitive uniqueness', async () => {
+    const brand = await createTestBrand();
+    const cat = await createTestCategory();
+
+    await api()
+      .post('/api/v1/products')
+      .set(admin.auth)
+      .send(sampleProductPayload(brand.id, cat.id, { sku: 'CR-10' }))
+      .expect(201);
+
+    const p2 = await api()
+      .post('/api/v1/products')
+      .set(admin.auth)
+      .send(sampleProductPayload(brand.id, cat.id, { sku: 'CR-20' }))
+      .expect(201);
+
+    // Normalizes to uppercase on update
+    const updateRes = await api()
+      .patch(`/api/v1/products/${p2.body.data.id}`)
+      .set(admin.auth)
+      .send({ sku: 'p-new-01' })
+      .expect(200);
+    expect(updateRes.body.data.sku).toBe('P-NEW-01');
+
+    // Reject updating to cr-10 because CR-10 exists
+    const conflictRes = await api()
+      .patch(`/api/v1/products/${p2.body.data.id}`)
+      .set(admin.auth)
+      .send({ sku: 'cr-10' })
+      .expect(409);
+    expect(conflictRes.body.error.code).toBe(ProductsErrorCode.SKU_TAKEN);
   });
 
   it('allows patching product without changing its own SKU', async () => {

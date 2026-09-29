@@ -38,7 +38,25 @@ export const productsRepository = {
   /** Includes soft-deleted products, because unique SKUs stay reserved after deletion. */
   findBySkuIncludingDeleted(sku: string) {
     return prisma.product.findUnique({
-      where: { sku: sku.trim() },
+      where: { sku: sku.trim().toUpperCase() },
+    });
+  },
+
+  countLiveByBrandId(brandId: string): Promise<number> {
+    return prisma.product.count({
+      where: {
+        brandId,
+        ...notDeleted,
+      },
+    });
+  },
+
+  countLiveByCategoryId(categoryId: string): Promise<number> {
+    return prisma.product.count({
+      where: {
+        categoryId,
+        ...notDeleted,
+      },
     });
   },
 
@@ -74,7 +92,7 @@ export const productsRepository = {
     return prisma.product.create({
       data: {
         name: data.name.trim(),
-        sku: data.sku.trim(),
+        sku: data.sku.trim().toUpperCase(),
         brandId: data.brandId,
         categoryId: data.categoryId,
         description:
@@ -94,7 +112,7 @@ export const productsRepository = {
       where: { id },
       data: {
         ...(data.name !== undefined && { name: data.name.trim() }),
-        ...(data.sku !== undefined && { sku: data.sku.trim() }),
+        ...(data.sku !== undefined && { sku: data.sku.trim().toUpperCase() }),
         ...(data.brandId !== undefined && { brandId: data.brandId }),
         ...(data.categoryId !== undefined && { categoryId: data.categoryId }),
         ...(data.description !== undefined && {

@@ -48,10 +48,37 @@ export const productSchema = z
   })
   .meta({ id: 'Product' });
 
+export const skuRegex = /^[a-zA-Z0-9][a-zA-Z0-9._/-]*$/;
+
+export function normalizeSku(sku: string): string {
+  return sku.trim().toUpperCase();
+}
+
+export const productSkuSchema = z
+  .string()
+  .trim()
+  .min(1, 'SKU is required')
+  .max(100, 'SKU cannot exceed 100 characters')
+  .regex(
+    skuRegex,
+    'SKU must start with an alphanumeric character and may only contain letters, numbers, hyphens, underscores, dots, and slashes'
+  );
+
+export const updateProductSkuSchema = z
+  .string()
+  .trim()
+  .min(1, 'SKU cannot be empty')
+  .max(100, 'SKU cannot exceed 100 characters')
+  .regex(
+    skuRegex,
+    'SKU must start with an alphanumeric character and may only contain letters, numbers, hyphens, underscores, dots, and slashes'
+  )
+  .optional();
+
 export const createProductBodySchema = z
   .object({
     name: z.string().trim().min(1, 'Name is required').max(200, 'Name cannot exceed 200 characters'),
-    sku: z.string().trim().min(1, 'SKU is required').max(100, 'SKU cannot exceed 100 characters'),
+    sku: productSkuSchema,
     brandId: z.uuid('Brand ID must be a valid UUID'),
     categoryId: z.uuid('Category ID must be a valid UUID'),
     description: z
@@ -80,12 +107,7 @@ export const updateProductBodySchema = z
       .min(1, 'Name cannot be empty')
       .max(200, 'Name cannot exceed 200 characters')
       .optional(),
-    sku: z
-      .string()
-      .trim()
-      .min(1, 'SKU cannot be empty')
-      .max(100, 'SKU cannot exceed 100 characters')
-      .optional(),
+    sku: updateProductSkuSchema,
     brandId: z.uuid('Brand ID must be a valid UUID').optional(),
     categoryId: z.uuid('Category ID must be a valid UUID').optional(),
     description: z

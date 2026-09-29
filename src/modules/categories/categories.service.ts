@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { AppError } from '../../shared/errors';
 import { buildPaginationMeta, type Paginated } from '../../shared/http';
 import { storageService, UPLOAD_LIMITS, validateFileSize, validateImageContent } from '../../shared/storage';
+import { productReferenceService } from '../products';
 import { categoriesRepository, type CategoryRecord } from './categories.repository';
 import {
   CategoriesErrorCode,
@@ -178,9 +179,38 @@ export const categoriesService = {
     }
   },
 
+  async assertAssignable(
+    id: string,
+    options?: { notFoundCode?: string; unavailableCode?: string }
+  ): Promise<CategoryRecord> {
+    const category = await categoriesRepository.findByIdIncludingDeleted(id);
+    if (!category) {
+      throw AppError.badRequest(
+        'Selected category does not exist',
+        options?.notFoundCode ?? 'PRODUCTS_CATEGORY_NOT_FOUND'
+      );
+    }
+    if (category.deletedAt) {
+      throw AppError.badRequest(
+        'Cannot assign a deleted category to product',
+        options?.unavailableCode ?? 'PRODUCTS_CATEGORY_UNAVAILABLE'
+      );
+    }
+    return category;
+  },
+
   async softDelete(id: string, actorId: string): Promise<void> {
     const existing = await categoriesRepository.findById(id);
     if (!existing) throw AppError.notFound('Category');
+
+    const hasLiveProducts = await productReferenceService.hasLiveProductsForCategory(id);
+    if (hasLiveProducts) {
+      throw AppError.conflict(
+        'Cannot delete category because it has associated live products',
+        CategoriesErrorCode.HAS_PRODUCTS
+      );
+    }
+
     await categoriesRepository.softDelete(id, actorId);
   },
 

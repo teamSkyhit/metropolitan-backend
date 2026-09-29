@@ -1,10 +1,9 @@
 import { Prisma } from '@prisma/client';
 import { AppError } from '../../shared/errors';
 import { buildPaginationMeta, type Paginated } from '../../shared/http';
-import { brandsRepository } from '../brands';
-import { categoriesRepository } from '../categories';
 import { productsRepository, type ProductRecord } from './products.repository';
 import {
+  normalizeSku,
   ProductsErrorCode,
   type CreateProductBody,
   type ListProductsQuery,
@@ -57,7 +56,8 @@ export function toProductDto(record: ProductRecord): ProductDto {
 }
 
 async function assertSkuAvailable(sku: string, exceptProductId?: string): Promise<void> {
-  const existing = await productsRepository.findBySkuIncludingDeleted(sku);
+  const normalizedSku = normalizeSku(sku);
+  const existing = await productsRepository.findBySkuIncludingDeleted(normalizedSku);
   if (!existing || existing.id === exceptProductId) return;
   if (existing.deletedAt) {
     throw AppError.conflict(
@@ -69,30 +69,55 @@ async function assertSkuAvailable(sku: string, exceptProductId?: string): Promis
   throw AppError.conflict('A product with this SKU already exists', ProductsErrorCode.SKU_TAKEN);
 }
 
+export interface BrandAssignableValidator {
+  assertAssignable(
+    id: string,
+    options?: { notFoundCode?: string; unavailableCode?: string }
+  ): Promise<unknown>;
+}
+
+export interface CategoryAssignableValidator {
+  assertAssignable(
+    id: string,
+    options?: { notFoundCode?: string; unavailableCode?: string }
+  ): Promise<unknown>;
+}
+
+let configuredBrandsService: BrandAssignableValidator | null = null;
+let configuredCategoriesService: CategoryAssignableValidator | null = null;
+
+/**
+ * Wires cross-module brand and category assignable validators from the composition root
+ * (src/routes/index.ts) to avoid circular imports between products, brands, and categories.
+ */
+export function registerProductAssignValidation(deps: {
+  brandsService: BrandAssignableValidator;
+  categoriesService: CategoryAssignableValidator;
+}): void {
+  configuredBrandsService = deps.brandsService;
+  configuredCategoriesService = deps.categoriesService;
+}
+
 async function assertValidBrand(brandId: string): Promise<void> {
-  const brand = await brandsRepository.findByIdIncludingDeleted(brandId);
-  if (!brand) {
-    throw AppError.badRequest('Selected brand does not exist', ProductsErrorCode.BRAND_NOT_FOUND);
+  const validator = configuredBrandsService;
+  if (!validator) {
+    throw AppError.internal('Brands service validator is not configured');
   }
-  if (brand.deletedAt) {
-    throw AppError.badRequest(
-      'Cannot assign a deleted brand to product',
-      ProductsErrorCode.BRAND_UNAVAILABLE
-    );
-  }
+  await validator.assertAssignable(brandId, {
+    notFoundCode: ProductsErrorCode.BRAND_NOT_FOUND,
+    unavailableCode: ProductsErrorCode.BRAND_UNAVAILABLE,
+  });
 }
 
 async function assertValidCategory(categoryId: string): Promise<void> {
-  const category = await categoriesRepository.findByIdIncludingDeleted(categoryId);
-  if (!category) {
-    throw AppError.badRequest('Selected category does not exist', ProductsErrorCode.CATEGORY_NOT_FOUND);
+  const validator = configuredCategoriesService;
+  if (!validator) {
+    throw AppError.internal('Categories service validator is not configured');
   }
-  if (category.deletedAt) {
-    throw AppError.badRequest(
-      'Cannot assign a deleted category to product',
-      ProductsErrorCode.CATEGORY_UNAVAILABLE
-    );
-  }
+  await validator.assertAssignable(categoryId, {
+    notFoundCode: ProductsErrorCode.CATEGORY_NOT_FOUND,
+    unavailableCode: ProductsErrorCode.CATEGORY_UNAVAILABLE,
+  });
 }
 
 export const productsService = {
@@ -110,10 +135,11 @@ export const productsService = {
   async create(body: CreateProductBody, actorId: string): Promise<ProductDto> {
     await assertValidBrand(body.brandId);
     await assertValidCategory(body.categoryId);
-    await assertSkuAvailable(body.sku.trim());
+    const normalizedSku = normalizeSku(body.sku);
+    await assertSkuAvailable(normalizedSku);
 
     try {
-      const record = await productsRepository.create(body, actorId);
+      const record = await productsRepository.create({ ...body, sku: normalizedSku }, actorId);
       return toProductDto(record);
     } catch (err) {
       handlePrismaUniqueError(err);
@@ -125,8 +151,10 @@ export const productsService = {
     const existing = await productsRepository.findById(id);
     if (!existing) throw AppError.notFound('Product');
 
-    if (body.sku && body.sku.trim() !== existing.sku) {
-      await assertSkuAvailable(body.sku.trim(), id);
+    const normalizedSku = body.sku !== undefined ? normalizeSku(body.sku) : undefined;
+
+    if (normalizedSku && normalizedSku !== existing.sku) {
+      await assertSkuAvailable(normalizedSku, id);
     }
     if (body.brandId && body.brandId !== existing.brandId) {
       await assertValidBrand(body.brandId);
@@ -136,7 +164,11 @@ export const productsService = {
     }
 
     try {
-      const updated = await productsRepository.update(id, body, actorId);
+      const updated = await productsRepository.update(
+        id,
+        { ...body, ...(normalizedSku !== undefined && { sku: normalizedSku }) },
+        actorId
+      );
       return toProductDto(updated);
     } catch (err) {
       handlePrismaUniqueError(err);

@@ -12,7 +12,7 @@ export const brandsModule: AppModule = {
 
 // Public API for other modules.
 export { brandsService, toBrandDto, toPublicBrandDto, generateSlug } from './brands.service';
-export { brandsRepository, type BrandRecord } from './brands.repository';
+export type { BrandRecord } from './brands.repository';
 export {
   BrandsErrorCode,
   brandSchema,

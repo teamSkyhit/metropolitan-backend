@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { AppError } from '../../shared/errors';
 import { buildPaginationMeta, type Paginated } from '../../shared/http';
 import { storageService, UPLOAD_LIMITS, validateFileSize, validateImageContent } from '../../shared/storage';
+import { productReferenceService } from '../products';
 import { brandsRepository, type BrandRecord } from './brands.repository';
 import {
   BrandsErrorCode,
@@ -148,9 +149,38 @@ export const brandsService = {
     }
   },
 
+  async assertAssignable(
+    id: string,
+    options?: { notFoundCode?: string; unavailableCode?: string }
+  ): Promise<BrandRecord> {
+    const brand = await brandsRepository.findByIdIncludingDeleted(id);
+    if (!brand) {
+      throw AppError.badRequest(
+        'Selected brand does not exist',
+        options?.notFoundCode ?? 'PRODUCTS_BRAND_NOT_FOUND'
+      );
+    }
+    if (brand.deletedAt) {
+      throw AppError.badRequest(
+        'Cannot assign a deleted brand to product',
+        options?.unavailableCode ?? 'PRODUCTS_BRAND_UNAVAILABLE'
+      );
+    }
+    return brand;
+  },
+
   async softDelete(id: string, actorId: string): Promise<void> {
     const existing = await brandsRepository.findById(id);
     if (!existing) throw AppError.notFound('Brand');
+
+    const hasLiveProducts = await productReferenceService.hasLiveProductsForBrand(id);
+    if (hasLiveProducts) {
+      throw AppError.conflict(
+        'Cannot delete brand because it has associated live products',
+        BrandsErrorCode.HAS_PRODUCTS
+      );
+    }
+
     await brandsRepository.softDelete(id, actorId);
   },
 

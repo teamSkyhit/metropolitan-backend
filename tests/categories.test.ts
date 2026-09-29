@@ -868,6 +868,39 @@ describe('DELETE /api/v1/categories/:id & Restore', () => {
     await api().delete(`/api/v1/categories/${id}`).set(admin.auth).expect(404);
   });
 
+  it('rejects deleting a category that has live products with 409 CATEGORIES_HAS_PRODUCTS', async () => {
+    const category = await api().post('/api/v1/categories').set(admin.auth).send(sampleCategory).expect(201);
+    const brand = await api()
+      .post('/api/v1/brands')
+      .set(admin.auth)
+      .send({ name: 'ABB', slug: 'abb' })
+      .expect(201);
+
+    const product = await api()
+      .post('/api/v1/products')
+      .set(admin.auth)
+      .send({
+        name: 'Inverter Drive',
+        sku: 'INV-DRV-01',
+        brandId: brand.body.data.id,
+        categoryId: category.body.data.id,
+      })
+      .expect(201);
+
+    const res = await api().delete(`/api/v1/categories/${category.body.data.id}`).set(admin.auth).expect(409);
+    expect(res.body.error.code).toBe(CategoriesErrorCode.HAS_PRODUCTS);
+
+    // Verify category is not deleted
+    const catRow = await prisma.category.findUniqueOrThrow({ where: { id: category.body.data.id } });
+    expect(catRow.deletedAt).toBeNull();
+
+    // Soft-delete the product
+    await api().delete(`/api/v1/products/${product.body.data.id}`).set(admin.auth).expect(204);
+
+    // Now category deletion succeeds because products are soft-deleted
+    await api().delete(`/api/v1/categories/${category.body.data.id}`).set(admin.auth).expect(204);
+  });
+
   it('restores soft-deleted category successfully', async () => {
     const created = await api().post('/api/v1/categories').set(admin.auth).send(sampleCategory).expect(201);
     const id = created.body.data.id;

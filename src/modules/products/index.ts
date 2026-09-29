@@ -10,14 +10,29 @@ export const productsModule: AppModule = {
 };
 
 // Public API for other modules.
-export { productsService, toProductDto } from './products.service';
-export { productsRepository, type ProductRecord } from './products.repository';
+export {
+  productsService,
+  toProductDto,
+  registerProductAssignValidation,
+  type BrandAssignableValidator,
+  type CategoryAssignableValidator,
+} from './products.service';
+export {
+  productReferenceService,
+  productUsageService,
+  type ProductReferenceService,
+} from './product-reference.service';
+export type { ProductRecord } from './products.repository';
 export {
   ProductsErrorCode,
   productSchema,
   productStatusSchema,
   productBrandSummarySchema,
   productCategorySummarySchema,
+  skuRegex,
+  normalizeSku,
+  productSkuSchema,
+  updateProductSkuSchema,
   createProductBodySchema,
   updateProductBodySchema,
   listProductsQuerySchema,
