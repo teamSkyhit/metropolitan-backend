@@ -526,29 +526,59 @@ describe('Public Products API', () => {
     expect(visibleDetail.body.data.price).toBe(120.5);
   });
 
-  it('supports product detail lookup by UUID, SKU, or name slug', async () => {
+  it('supports product detail lookup by UUID, SKU, and exact stored slug (including hyphenated names and duplicate collisions)', async () => {
     const brand = await createTestBrand({ name: 'Danfoss', slug: 'danfoss' });
     const category = await createTestCategory({ name: 'VFD', slug: 'vfd' });
 
-    const product = await createTestProduct({
-      name: 'Danfoss Drive FC51',
-      sku: 'FC-51-01',
+    // 1. Create product with hyphenated name: "High-Speed Motor"
+    const product1 = await createTestProduct({
+      name: 'High-Speed Motor',
+      sku: 'HSM-01',
       brandId: brand.id,
       categoryId: category.id,
       status: 'PUBLISHED',
     });
 
-    // 1. Lookup by UUID
-    const byId = await api().get(`/api/v1/public/products/${product.id}`).expect(200);
-    expect(byId.body.data.id).toBe(product.id);
+    // Verify stored slug in product listing
+    const listRes = await api().get('/api/v1/public/products?search=HSM-01').expect(200);
+    expect(listRes.body.data).toHaveLength(1);
+    expect(listRes.body.data[0].slug).toBe('high-speed-motor');
 
-    // 2. Lookup by SKU
-    const bySku = await api().get('/api/v1/public/products/FC-51-01').expect(200);
-    expect(bySku.body.data.id).toBe(product.id);
+    // Exact stored slug lookup for hyphenated name
+    const bySlug = await api().get('/api/v1/public/products/high-speed-motor').expect(200);
+    expect(bySlug.body.success).toBe(true);
+    expect(bySlug.body.data.id).toBe(product1.id);
+    expect(bySlug.body.data.name).toBe('High-Speed Motor');
+    expect(bySlug.body.data.slug).toBe('high-speed-motor');
 
-    // 3. Lookup by computed slug (danfoss-drive-fc51)
-    const bySlug = await api().get('/api/v1/public/products/danfoss-drive-fc51').expect(200);
-    expect(bySlug.body.data.id).toBe(product.id);
+    // UUID lookup
+    const byId = await api().get(`/api/v1/public/products/${product1.id}`).expect(200);
+    expect(byId.body.data.id).toBe(product1.id);
+
+    // SKU lookup
+    const bySku = await api().get('/api/v1/public/products/HSM-01').expect(200);
+    expect(bySku.body.data.id).toBe(product1.id);
+
+    // 2. Duplicate product name collision test: second product with same name
+    const product2 = await createTestProduct({
+      name: 'High-Speed Motor',
+      sku: 'HSM-02',
+      brandId: brand.id,
+      categoryId: category.id,
+      status: 'PUBLISHED',
+    });
+
+    // Must resolve deterministically to high-speed-motor-2
+    expect(product2.slug).toBe('high-speed-motor-2');
+
+    const byCollisionSlug = await api().get('/api/v1/public/products/high-speed-motor-2').expect(200);
+    expect(byCollisionSlug.body.success).toBe(true);
+    expect(byCollisionSlug.body.data.id).toBe(product2.id);
+    expect(byCollisionSlug.body.data.sku).toBe('HSM-02');
+
+    // First slug still resolves exclusively to product 1
+    const byFirstSlugAgain = await api().get('/api/v1/public/products/high-speed-motor').expect(200);
+    expect(byFirstSlugAgain.body.data.id).toBe(product1.id);
   });
 
   it('never exposes internal or CRM-only fields in public products', async () => {
@@ -603,5 +633,10 @@ describe('Public Products API', () => {
   it('returns 404 for non-existent product slug/id', async () => {
     await api().get('/api/v1/public/products/non-existent-product-identifier').expect(404);
     await api().get(`/api/v1/public/products/${randomUUID()}`).expect(404);
+  });
+
+  it('applies the publicCatalog rate limiter to public catalog endpoints', async () => {
+    const res = await api().get('/api/v1/public/products').expect(200);
+    expect(res.headers['ratelimit-policy']).toBeDefined();
   });
 });

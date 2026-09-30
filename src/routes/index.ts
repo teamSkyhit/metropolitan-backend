@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { registerAuthUserResolver } from '../middleware';
+import { rateLimiters, registerAuthUserResolver } from '../middleware';
 import { authModule } from '../modules/auth';
 import { brandsModule, brandsService } from '../modules/brands';
 import { enquiriesModule } from '../modules/enquiries';
@@ -45,6 +45,8 @@ registerMediaReferenceCheckers([
 export function createApiRouter(): Router {
   const router = Router();
   const publicRouter = Router();
+
+  publicRouter.use(rateLimiters.publicCatalog);
 
   for (const module of modules) {
     if (module.publicRouter) publicRouter.use(module.basePath, module.publicRouter);

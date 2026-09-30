@@ -24,6 +24,9 @@ function handlePrismaUniqueError(err: unknown): void {
     if (target.includes('sku')) {
       throw AppError.conflict('A product with this SKU already exists', ProductsErrorCode.SKU_TAKEN);
     }
+    if (target.includes('slug')) {
+      throw AppError.conflict('A product with this slug already exists', ProductsErrorCode.SLUG_TAKEN);
+    }
     throw AppError.conflict('A record with the same unique value already exists');
   }
 }
@@ -33,6 +36,7 @@ export function toProductDto(record: ProductRecord): ProductDto {
   return {
     id: record.id,
     name: record.name,
+    slug: record.slug,
     sku: record.sku,
     brandId: record.brandId,
     categoryId: record.categoryId,
@@ -73,12 +77,28 @@ export function generateSlug(name: string): string {
     .replace(/-+/g, '-');
 }
 
-/** Maps database record to Public Product DTO without internal audit and CRM-only fields. */
+/** Resolves a collision-free slug using base-slug, base-slug-2, base-slug-3, ... */
+export async function resolveUniqueProductSlug(baseName: string, exceptProductId?: string): Promise<string> {
+  const baseSlug = generateSlug(baseName) || 'product';
+  let candidate = baseSlug;
+  let counter = 1;
+
+  while (true) {
+    const existing = await productsRepository.findBySlugIncludingDeleted(candidate);
+    if (!existing || existing.id === exceptProductId) {
+      return candidate;
+    }
+    counter++;
+    candidate = `${baseSlug}-${counter}`;
+  }
+}
+
+/** Maps database record to Public Product DTO using stored Product.slug without internal audit and CRM-only fields. */
 export function toPublicProductDto(record: PublicProductRecord): PublicProductDto {
   return {
     id: record.id,
     name: record.name,
-    slug: generateSlug(record.name) || record.sku.toLowerCase(),
+    slug: record.slug,
     sku: record.sku,
     description: record.description,
     price: record.priceVisibility && record.price !== null ? record.price.toNumber() : null,
@@ -202,9 +222,10 @@ export const productsService = {
     await assertValidCategory(body.categoryId);
     const normalizedSku = normalizeSku(body.sku);
     await assertSkuAvailable(normalizedSku);
+    const slug = await resolveUniqueProductSlug(body.name);
 
     try {
-      const record = await productsRepository.create({ ...body, sku: normalizedSku }, actorId);
+      const record = await productsRepository.create({ ...body, sku: normalizedSku, slug }, actorId);
       return toProductDto(record);
     } catch (err) {
       handlePrismaUniqueError(err);

@@ -79,6 +79,14 @@ export const productsRepository = {
     });
   },
 
+  /** Includes soft-deleted products, because unique slugs stay reserved after deletion. */
+  findBySlugIncludingDeleted(slug: string): Promise<ProductRecord | null> {
+    return prisma.product.findUnique({
+      where: { slug: slug.trim().toLowerCase() },
+      include: productIncludes,
+    });
+  },
+
   countLiveByBrandId(brandId: string): Promise<number> {
     return prisma.product.count({
       where: {
@@ -243,25 +251,23 @@ export const productsRepository = {
     });
     if (bySku) return bySku;
 
-    const nameCandidate = identifier.replace(/-/g, ' ').trim();
-    if (nameCandidate.length > 0) {
-      const byName = await prisma.product.findFirst({
-        where: {
-          name: { equals: nameCandidate, mode: 'insensitive' },
-          ...baseWhere,
-        },
-        include: publicProductIncludes,
-      });
-      if (byName) return byName;
-    }
+    const bySlug = await prisma.product.findFirst({
+      where: {
+        slug: identifier.trim().toLowerCase(),
+        ...baseWhere,
+      },
+      include: publicProductIncludes,
+    });
+    if (bySlug) return bySlug;
 
     return null;
   },
 
-  create(data: CreateProductBody, actorId: string): Promise<ProductRecord> {
+  create(data: CreateProductBody & { slug: string }, actorId: string): Promise<ProductRecord> {
     return prisma.product.create({
       data: {
         name: data.name.trim(),
+        slug: data.slug.trim().toLowerCase(),
         sku: data.sku.trim().toUpperCase(),
         brandId: data.brandId,
         categoryId: data.categoryId,
@@ -282,11 +288,12 @@ export const productsRepository = {
     });
   },
 
-  update(id: string, data: UpdateProductBody, actorId: string): Promise<ProductRecord> {
+  update(id: string, data: UpdateProductBody & { slug?: string }, actorId: string): Promise<ProductRecord> {
     return prisma.product.update({
       where: { id },
       data: {
         ...(data.name !== undefined && { name: data.name.trim() }),
+        ...(data.slug !== undefined && { slug: data.slug.trim().toLowerCase() }),
         ...(data.sku !== undefined && { sku: data.sku.trim().toUpperCase() }),
         ...(data.brandId !== undefined && { brandId: data.brandId }),
         ...(data.categoryId !== undefined && { categoryId: data.categoryId }),

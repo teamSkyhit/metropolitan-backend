@@ -31,4 +31,10 @@ export const rateLimiters = {
   auth: createRateLimiter({ name: 'auth', limit: config.RATE_LIMIT_AUTH_MAX }),
   /** Public website form submissions (enquiries, contact, ...). */
   publicForm: createRateLimiter({ name: 'public-form', limit: config.RATE_LIMIT_PUBLIC_MAX }),
+  /** Public website catalog read endpoints (products, brands, categories). */
+  publicCatalog: createRateLimiter({
+    name: 'public-catalog',
+    limit: config.RATE_LIMIT_PUBLIC_CATALOG_MAX,
+    windowMs: 60 * 1000,
+  }),
 };

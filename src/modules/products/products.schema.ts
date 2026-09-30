@@ -4,6 +4,8 @@ import { paginationQuerySchema, sortOrderSchema } from '../../shared/http';
 export const ProductsErrorCode = {
   SKU_TAKEN: 'PRODUCTS_SKU_TAKEN',
   SKU_BELONGS_TO_DELETED_PRODUCT: 'PRODUCTS_SKU_BELONGS_TO_DELETED_PRODUCT',
+  SLUG_TAKEN: 'PRODUCTS_SLUG_TAKEN',
+  SLUG_BELONGS_TO_DELETED_PRODUCT: 'PRODUCTS_SLUG_BELONGS_TO_DELETED_PRODUCT',
   BRAND_NOT_FOUND: 'PRODUCTS_BRAND_NOT_FOUND',
   BRAND_UNAVAILABLE: 'PRODUCTS_BRAND_UNAVAILABLE',
   CATEGORY_NOT_FOUND: 'PRODUCTS_CATEGORY_NOT_FOUND',
@@ -71,6 +73,7 @@ export const productSchema = z
   .object({
     id: z.uuid(),
     name: z.string(),
+    slug: z.string(),
     sku: z.string(),
     brandId: z.uuid(),
     categoryId: z.uuid(),
