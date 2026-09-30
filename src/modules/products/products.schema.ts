@@ -28,6 +28,44 @@ export const productCategorySummarySchema = z.object({
   slug: z.string(),
 });
 
+export const productSpecificationItemSchema = z.object({
+  key: z
+    .string()
+    .trim()
+    .min(1, 'Specification key cannot be empty')
+    .max(100, 'Specification key cannot exceed 100 characters'),
+  value: z
+    .string()
+    .trim()
+    .min(1, 'Specification value cannot be empty')
+    .max(500, 'Specification value cannot exceed 500 characters'),
+  unit: z.string().trim().max(50, 'Specification unit cannot exceed 50 characters').optional(),
+});
+
+export const productSpecificationsSchema = z
+  .array(productSpecificationItemSchema)
+  .max(100, 'Specifications list cannot exceed 100 items')
+  .superRefine((items, ctx) => {
+    const seen = new Set<string>();
+    items.forEach((item, index) => {
+      const lower = item.key.toLowerCase();
+      if (seen.has(lower)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Duplicate specification key '${item.key}' is not allowed`,
+          path: [index, 'key'],
+        });
+      }
+      seen.add(lower);
+    });
+  });
+
+export const updateProductSpecificationsBodySchema = z
+  .object({
+    specifications: productSpecificationsSchema,
+  })
+  .meta({ id: 'UpdateProductSpecificationsRequest' });
+
 /** Admin Product DTO. Raw Prisma model mapped in the service. */
 export const productSchema = z
   .object({
@@ -41,6 +79,8 @@ export const productSchema = z
     priceVisibility: z.boolean(),
     status: productStatusSchema,
     hotDeal: z.boolean(),
+    imageUrl: z.string().nullable(),
+    specifications: z.array(productSpecificationItemSchema).nullable(),
     brand: productBrandSummarySchema.optional(),
     category: productCategorySummarySchema.optional(),
     createdAt: z.iso.datetime(),
@@ -96,7 +136,9 @@ export const createProductBodySchema = z
     priceVisibility: z.boolean().default(true),
     status: productStatusSchema.default('DRAFT'),
     hotDeal: z.boolean().default(false),
+    specifications: productSpecificationsSchema.nullable().optional(),
   })
+  .strict()
   .meta({ id: 'CreateProductRequest' });
 
 export const updateProductBodySchema = z
@@ -125,7 +167,9 @@ export const updateProductBodySchema = z
     priceVisibility: z.boolean().optional(),
     status: productStatusSchema.optional(),
     hotDeal: z.boolean().optional(),
+    specifications: productSpecificationsSchema.nullable().optional(),
   })
+  .strict()
   .refine((body) => Object.keys(body).length > 0, 'Provide at least one field to update')
   .meta({ id: 'UpdateProductRequest' });
 
@@ -147,3 +191,5 @@ export type ProductDto = z.infer<typeof productSchema>;
 export type CreateProductBody = z.infer<typeof createProductBodySchema>;
 export type UpdateProductBody = z.infer<typeof updateProductBodySchema>;
 export type ListProductsQuery = z.infer<typeof listProductsQuerySchema>;
+export type ProductSpecificationItem = z.infer<typeof productSpecificationItemSchema>;
+export type UpdateProductSpecificationsBody = z.infer<typeof updateProductSpecificationsBodySchema>;

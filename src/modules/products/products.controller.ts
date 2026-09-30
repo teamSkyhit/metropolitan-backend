@@ -7,7 +7,12 @@ import {
   sendSuccess,
 } from '../../shared/http';
 import { requireAuth } from '../../shared/security/auth-context';
-import { createProductBodySchema, listProductsQuerySchema, updateProductBodySchema } from './products.schema';
+import {
+  createProductBodySchema,
+  listProductsQuerySchema,
+  updateProductBodySchema,
+  updateProductSpecificationsBodySchema,
+} from './products.schema';
 import { productsService } from './products.service';
 
 /** HTTP only: read validated input, call the service, send the response. */
@@ -37,4 +42,26 @@ export const productsController = {
   restore: handle({ params: idParamsSchema }, async (req, res) => {
     sendSuccess(res, await productsService.restore(req.params.id, requireAuth(req).userId));
   }),
+
+  uploadImage: handle({ params: idParamsSchema }, async (req, res) => {
+    sendSuccess(res, await productsService.uploadImage(req.params.id, req.file!, requireAuth(req).userId));
+  }),
+
+  removeImage: handle({ params: idParamsSchema }, async (req, res) => {
+    sendSuccess(res, await productsService.removeImage(req.params.id, requireAuth(req).userId));
+  }),
+
+  updateSpecifications: handle(
+    { params: idParamsSchema, body: updateProductSpecificationsBodySchema },
+    async (req, res) => {
+      sendSuccess(
+        res,
+        await productsService.updateSpecifications(
+          req.params.id,
+          req.body.specifications,
+          requireAuth(req).userId
+        )
+      );
+    }
+  ),
 };

@@ -26,7 +26,7 @@ export function registerCategoriesDocs(registry: OpenAPIRegistry): void {
     content: {
       'multipart/form-data': {
         schema: z.object({
-          file: z.string().meta({ format: 'binary', description: 'PNG, JPEG, or WebP image' }),
+          banner: z.string().meta({ format: 'binary', description: 'PNG, JPEG, or WebP image' }),
         }),
       },
     },

@@ -23,7 +23,7 @@ categoriesRouter.put(
   authorize(Permission.CATEGORIES_UPDATE),
   requireFileUpload({
     maxBytes: UPLOAD_LIMITS.BANNER_MAX_BYTES,
-    fieldNames: ['file', 'banner'],
+    fieldName: 'banner',
     entityName: 'Banner',
   }),
   categoriesController.uploadBanner

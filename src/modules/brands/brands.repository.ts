@@ -58,6 +58,17 @@ export const brandsRepository = {
     });
   },
 
+  isMediaUrlReferenced(url: string): Promise<boolean> {
+    return prisma.brand
+      .count({
+        where: {
+          OR: [{ logoUrl: url }, { bannerUrl: url }],
+          ...notDeleted,
+        },
+      })
+      .then((count) => count > 0);
+  },
+
   async findMany(query: ListBrandsQuery): Promise<{ items: Brand[]; total: number }> {
     const where: Prisma.BrandWhereInput = {
       ...notDeleted,

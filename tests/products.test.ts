@@ -9,6 +9,14 @@ import { prisma, resetDatabase } from './helpers/db';
 let admin: Session;
 let sales: Session;
 
+const validPngBuffer = Buffer.from([
+  0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+]);
+const validJpgBuffer = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01]);
+const validWebpBuffer = Buffer.from([
+  0x52, 0x49, 0x46, 0x46, 0x18, 0x00, 0x00, 0x00, 0x57, 0x45, 0x42, 0x50, 0x56, 0x50, 0x38, 0x20,
+]);
+
 beforeEach(async () => {
   await resetDatabase();
   admin = await signInAs('SUPER_ADMIN');
@@ -68,6 +76,9 @@ describe('Products Access Control & RBAC', () => {
     await api().patch(`/api/v1/products/${id}`).send({ name: 'Pump 2' }).expect(401);
     await api().delete(`/api/v1/products/${id}`).expect(401);
     await api().post(`/api/v1/products/${id}/restore`).expect(401);
+    await api().put(`/api/v1/products/${id}/image`).expect(401);
+    await api().delete(`/api/v1/products/${id}/image`).expect(401);
+    await api().put(`/api/v1/products/${id}/specifications`).expect(401);
   });
 
   it('allows authorized Sales Manager to manage products', async () => {
@@ -245,6 +256,20 @@ describe('Product Creation & Validation', () => {
       .post('/api/v1/products')
       .set(admin.auth)
       .send({ name: 'Product', sku: 'S'.repeat(101), brandId: brand.id, categoryId: category.id })
+      .expect(400);
+  });
+
+  it('rejects product creation with imageUrl in payload with 400', async () => {
+    const brand = await createTestBrand();
+    const category = await createTestCategory();
+
+    await api()
+      .post('/api/v1/products')
+      .set(admin.auth)
+      .send({
+        ...sampleProductPayload(brand.id, category.id),
+        imageUrl: 'https://malicious.com/exploit.png',
+      })
       .expect(400);
   });
 
@@ -997,6 +1022,22 @@ describe('Product Partial Updates (PATCH)', () => {
 
     await api().patch(`/api/v1/products/${created.body.data.id}`).set(admin.auth).send({}).expect(400);
   });
+
+  it('rejects product update with imageUrl in payload with 400', async () => {
+    const brand = await createTestBrand();
+    const cat = await createTestCategory();
+    const created = await api()
+      .post('/api/v1/products')
+      .set(admin.auth)
+      .send(sampleProductPayload(brand.id, cat.id))
+      .expect(201);
+
+    await api()
+      .patch(`/api/v1/products/${created.body.data.id}`)
+      .set(admin.auth)
+      .send({ imageUrl: 'https://malicious.com/exploit.png' })
+      .expect(400);
+  });
 });
 
 describe('Product Soft-Delete & Restore', () => {
@@ -1084,5 +1125,452 @@ describe('Product Database Foreign Key Referential Integrity', () => {
 
     // Direct database hard delete attempt should fail due to FK restriction
     await expect(prisma.category.delete({ where: { id: cat.id } })).rejects.toThrow();
+  });
+});
+
+describe('Product Image Upload, Replacement & Deletion (PUT & DELETE /api/v1/products/:id/image)', () => {
+  it('uploads valid product image (PNG) via PUT /api/v1/products/:id/image', async () => {
+    const brand = await createTestBrand();
+    const cat = await createTestCategory();
+    const created = await api()
+      .post('/api/v1/products')
+      .set(admin.auth)
+      .send(sampleProductPayload(brand.id, cat.id))
+      .expect(201);
+    const productId = created.body.data.id;
+
+    const res = await api()
+      .put(`/api/v1/products/${productId}/image`)
+      .set(admin.auth)
+      .attach('image', validPngBuffer, 'product.png')
+      .expect(200);
+
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.imageUrl).toMatch(/\/products\/images\/.*\.png$/);
+
+    const inDb = await prisma.product.findUniqueOrThrow({ where: { id: productId } });
+    expect(inDb.imageUrl).toBe(res.body.data.imageUrl);
+  });
+
+  it('uploads valid product image (JPEG) via PUT /api/v1/products/:id/image', async () => {
+    const brand = await createTestBrand();
+    const cat = await createTestCategory();
+    const created = await api()
+      .post('/api/v1/products')
+      .set(sales.auth)
+      .send(sampleProductPayload(brand.id, cat.id))
+      .expect(201);
+    const productId = created.body.data.id;
+
+    const res = await api()
+      .put(`/api/v1/products/${productId}/image`)
+      .set(sales.auth)
+      .attach('image', validJpgBuffer, 'product.jpg')
+      .expect(200);
+
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.imageUrl).toMatch(/\/products\/images\/.*\.jpg$/);
+  });
+
+  it('rejects product image upload with wrong field name with 400', async () => {
+    const brand = await createTestBrand();
+    const cat = await createTestCategory();
+    const created = await api()
+      .post('/api/v1/products')
+      .set(admin.auth)
+      .send(sampleProductPayload(brand.id, cat.id))
+      .expect(201);
+    const productId = created.body.data.id;
+
+    await api()
+      .put(`/api/v1/products/${productId}/image`)
+      .set(admin.auth)
+      .attach('file', validJpgBuffer, 'product.jpg')
+      .expect(400);
+
+    await api()
+      .put(`/api/v1/products/${productId}/image`)
+      .set(admin.auth)
+      .attach('avatar', validJpgBuffer, 'product.jpg')
+      .expect(400);
+  });
+
+  it('rejects product image upload with two files with 400', async () => {
+    const brand = await createTestBrand();
+    const cat = await createTestCategory();
+    const created = await api()
+      .post('/api/v1/products')
+      .set(admin.auth)
+      .send(sampleProductPayload(brand.id, cat.id))
+      .expect(201);
+    const productId = created.body.data.id;
+
+    await api()
+      .put(`/api/v1/products/${productId}/image`)
+      .set(admin.auth)
+      .attach('image', validPngBuffer, 'product1.png')
+      .attach('image', validJpgBuffer, 'product2.jpg')
+      .expect(400);
+  });
+
+  it('uploads valid product image (WebP) via PUT /api/v1/products/:id/image', async () => {
+    const brand = await createTestBrand();
+    const cat = await createTestCategory();
+    const created = await api()
+      .post('/api/v1/products')
+      .set(admin.auth)
+      .send(sampleProductPayload(brand.id, cat.id))
+      .expect(201);
+    const productId = created.body.data.id;
+
+    const res = await api()
+      .put(`/api/v1/products/${productId}/image`)
+      .set(admin.auth)
+      .attach('image', validWebpBuffer, 'product.webp')
+      .expect(200);
+
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.imageUrl).toMatch(/\/products\/images\/.*\.webp$/);
+  });
+
+  it('safely replaces existing image and deletes old stored file', async () => {
+    const brand = await createTestBrand();
+    const cat = await createTestCategory();
+    const created = await api()
+      .post('/api/v1/products')
+      .set(admin.auth)
+      .send(sampleProductPayload(brand.id, cat.id))
+      .expect(201);
+    const productId = created.body.data.id;
+
+    const firstUpload = await api()
+      .put(`/api/v1/products/${productId}/image`)
+      .set(admin.auth)
+      .attach('image', validPngBuffer, 'first.png')
+      .expect(200);
+
+    const firstUrl = firstUpload.body.data.imageUrl;
+    expect(firstUrl).toBeDefined();
+
+    const secondUpload = await api()
+      .put(`/api/v1/products/${productId}/image`)
+      .set(admin.auth)
+      .attach('image', validJpgBuffer, 'second.jpg')
+      .expect(200);
+
+    const secondUrl = secondUpload.body.data.imageUrl;
+    expect(secondUrl).toBeDefined();
+    expect(secondUrl).not.toBe(firstUrl);
+    expect(secondUrl).toMatch(/\.jpg$/);
+
+    const inDb = await prisma.product.findUniqueOrThrow({ where: { id: productId } });
+    expect(inDb.imageUrl).toBe(secondUrl);
+  });
+
+  it('removes product image via DELETE /api/v1/products/:id/image', async () => {
+    const brand = await createTestBrand();
+    const cat = await createTestCategory();
+    const created = await api()
+      .post('/api/v1/products')
+      .set(admin.auth)
+      .send(sampleProductPayload(brand.id, cat.id))
+      .expect(201);
+    const productId = created.body.data.id;
+
+    await api()
+      .put(`/api/v1/products/${productId}/image`)
+      .set(admin.auth)
+      .attach('image', validPngBuffer, 'first.png')
+      .expect(200);
+
+    const deleteRes = await api().delete(`/api/v1/products/${productId}/image`).set(admin.auth).expect(200);
+
+    expect(deleteRes.body.success).toBe(true);
+    expect(deleteRes.body.data.imageUrl).toBeNull();
+
+    const inDb = await prisma.product.findUniqueOrThrow({ where: { id: productId } });
+    expect(inDb.imageUrl).toBeNull();
+  });
+
+  it('rejects empty file upload with 400', async () => {
+    const brand = await createTestBrand();
+    const cat = await createTestCategory();
+    const created = await api()
+      .post('/api/v1/products')
+      .set(admin.auth)
+      .send(sampleProductPayload(brand.id, cat.id))
+      .expect(201);
+
+    await api()
+      .put(`/api/v1/products/${created.body.data.id}/image`)
+      .set(admin.auth)
+      .attach('image', Buffer.from([]), 'empty.png')
+      .expect(400);
+  });
+
+  it('rejects invalid file content (SVG) with 400', async () => {
+    const brand = await createTestBrand();
+    const cat = await createTestCategory();
+    const created = await api()
+      .post('/api/v1/products')
+      .set(admin.auth)
+      .send(sampleProductPayload(brand.id, cat.id))
+      .expect(201);
+
+    const svgBuffer = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><circle r="10"/></svg>');
+    await api()
+      .put(`/api/v1/products/${created.body.data.id}/image`)
+      .set(admin.auth)
+      .attach('image', svgBuffer, 'vector.svg')
+      .expect(400);
+  });
+
+  it('rejects spoofed file extensions (text content pretending to be PNG) with 400', async () => {
+    const brand = await createTestBrand();
+    const cat = await createTestCategory();
+    const created = await api()
+      .post('/api/v1/products')
+      .set(admin.auth)
+      .send(sampleProductPayload(brand.id, cat.id))
+      .expect(201);
+
+    const fakePng = Buffer.from('this is just a text file renamed to png');
+    await api()
+      .put(`/api/v1/products/${created.body.data.id}/image`)
+      .set(admin.auth)
+      .attach('image', fakePng, 'fake.png')
+      .expect(400);
+  });
+
+  it('rejects upload exceeding 5 MB limit with 400', async () => {
+    const brand = await createTestBrand();
+    const cat = await createTestCategory();
+    const created = await api()
+      .post('/api/v1/products')
+      .set(admin.auth)
+      .send(sampleProductPayload(brand.id, cat.id))
+      .expect(201);
+
+    const oversizedBuffer = Buffer.alloc(5 * 1024 * 1024 + 1024);
+    await api()
+      .put(`/api/v1/products/${created.body.data.id}/image`)
+      .set(admin.auth)
+      .attach('image', oversizedBuffer, 'large.png')
+      .expect(400);
+  });
+
+  it('rejects upload when no file is attached with 400', async () => {
+    const brand = await createTestBrand();
+    const cat = await createTestCategory();
+    const created = await api()
+      .post('/api/v1/products')
+      .set(admin.auth)
+      .send(sampleProductPayload(brand.id, cat.id))
+      .expect(201);
+
+    await api()
+      .put(`/api/v1/products/${created.body.data.id}/image`)
+      .set(admin.auth)
+      .send({ someField: 'value' })
+      .expect(400);
+  });
+
+  it('returns 404 when uploading or deleting image for nonexistent product', async () => {
+    const nonExistentId = randomUUID();
+    await api()
+      .put(`/api/v1/products/${nonExistentId}/image`)
+      .set(admin.auth)
+      .attach('image', validPngBuffer, 'product.png')
+      .expect(404);
+
+    await api().delete(`/api/v1/products/${nonExistentId}/image`).set(admin.auth).expect(404);
+  });
+});
+
+describe('Product Specifications (POST, PATCH, PUT /api/v1/products/:id/specifications)', () => {
+  it('creates product with structured specifications via POST /api/v1/products', async () => {
+    const brand = await createTestBrand();
+    const cat = await createTestCategory();
+    const specs = [
+      { key: 'Motor Power', value: '7.5', unit: 'HP' },
+      { key: 'Flow Rate', value: '150', unit: 'L/min' },
+      { key: 'Material', value: 'Stainless Steel 316' },
+    ];
+
+    const res = await api()
+      .post('/api/v1/products')
+      .set(admin.auth)
+      .send(sampleProductPayload(brand.id, cat.id, { specifications: specs }))
+      .expect(201);
+
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.specifications).toEqual(specs);
+
+    const inDb = await prisma.product.findUniqueOrThrow({ where: { id: res.body.data.id } });
+    expect(inDb.specifications).toEqual(specs);
+  });
+
+  it('updates product specifications via PATCH /api/v1/products/:id', async () => {
+    const brand = await createTestBrand();
+    const cat = await createTestCategory();
+    const created = await api()
+      .post('/api/v1/products')
+      .set(admin.auth)
+      .send(sampleProductPayload(brand.id, cat.id))
+      .expect(201);
+    const productId = created.body.data.id;
+    expect(created.body.data.specifications).toBeNull();
+
+    const updatedSpecs = [{ key: 'Voltage', value: '415', unit: 'V' }];
+    const res = await api()
+      .patch(`/api/v1/products/${productId}`)
+      .set(admin.auth)
+      .send({ specifications: updatedSpecs })
+      .expect(200);
+
+    expect(res.body.data.specifications).toEqual(updatedSpecs);
+
+    // Clear specifications via PATCH null
+    const clearRes = await api()
+      .patch(`/api/v1/products/${productId}`)
+      .set(admin.auth)
+      .send({ specifications: null })
+      .expect(200);
+
+    expect(clearRes.body.data.specifications).toBeNull();
+  });
+
+  it('updates specifications via dedicated PUT /api/v1/products/:id/specifications', async () => {
+    const brand = await createTestBrand();
+    const cat = await createTestCategory();
+    const created = await api()
+      .post('/api/v1/products')
+      .set(sales.auth)
+      .send(sampleProductPayload(brand.id, cat.id))
+      .expect(201);
+    const productId = created.body.data.id;
+
+    const specs = [
+      { key: 'Pressure', value: '10', unit: 'bar' },
+      { key: 'RPM', value: '2900' },
+    ];
+
+    const res = await api()
+      .put(`/api/v1/products/${productId}/specifications`)
+      .set(sales.auth)
+      .send({ specifications: specs })
+      .expect(200);
+
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.specifications).toEqual(specs);
+
+    const inDb = await prisma.product.findUniqueOrThrow({ where: { id: productId } });
+    expect(inDb.specifications).toEqual(specs);
+  });
+
+  it('rejects specifications with empty key with 400', async () => {
+    const brand = await createTestBrand();
+    const cat = await createTestCategory();
+    const created = await api()
+      .post('/api/v1/products')
+      .set(admin.auth)
+      .send(sampleProductPayload(brand.id, cat.id))
+      .expect(201);
+
+    await api()
+      .put(`/api/v1/products/${created.body.data.id}/specifications`)
+      .set(admin.auth)
+      .send({ specifications: [{ key: '', value: '100' }] })
+      .expect(400);
+  });
+
+  it('rejects specifications with empty value with 400', async () => {
+    const brand = await createTestBrand();
+    const cat = await createTestCategory();
+    const created = await api()
+      .post('/api/v1/products')
+      .set(admin.auth)
+      .send(sampleProductPayload(brand.id, cat.id))
+      .expect(201);
+
+    await api()
+      .put(`/api/v1/products/${created.body.data.id}/specifications`)
+      .set(admin.auth)
+      .send({ specifications: [{ key: 'Power', value: '' }] })
+      .expect(400);
+  });
+
+  it('rejects duplicate specification keys case-insensitively with 400', async () => {
+    const brand = await createTestBrand();
+    const cat = await createTestCategory();
+    const created = await api()
+      .post('/api/v1/products')
+      .set(admin.auth)
+      .send(sampleProductPayload(brand.id, cat.id))
+      .expect(201);
+
+    await api()
+      .put(`/api/v1/products/${created.body.data.id}/specifications`)
+      .set(admin.auth)
+      .send({
+        specifications: [
+          { key: 'Power', value: '10', unit: 'HP' },
+          { key: 'power', value: '15', unit: 'HP' },
+        ],
+      })
+      .expect(400);
+  });
+
+  it('rejects specification key exceeding 100 characters with 400', async () => {
+    const brand = await createTestBrand();
+    const cat = await createTestCategory();
+    const created = await api()
+      .post('/api/v1/products')
+      .set(admin.auth)
+      .send(sampleProductPayload(brand.id, cat.id))
+      .expect(201);
+
+    await api()
+      .put(`/api/v1/products/${created.body.data.id}/specifications`)
+      .set(admin.auth)
+      .send({
+        specifications: [{ key: 'a'.repeat(101), value: '10' }],
+      })
+      .expect(400);
+  });
+
+  it('rejects arbitrary object instead of structured array with 400', async () => {
+    const brand = await createTestBrand();
+    const cat = await createTestCategory();
+    const created = await api()
+      .post('/api/v1/products')
+      .set(admin.auth)
+      .send(sampleProductPayload(brand.id, cat.id))
+      .expect(201);
+
+    await api()
+      .put(`/api/v1/products/${created.body.data.id}/specifications`)
+      .set(admin.auth)
+      .send({ specifications: { arbitraryKey: 'arbitraryValue' } })
+      .expect(400);
+  });
+
+  it('returns 404 when updating specifications for nonexistent product', async () => {
+    await api()
+      .put(`/api/v1/products/${randomUUID()}/specifications`)
+      .set(admin.auth)
+      .send({ specifications: [{ key: 'Power', value: '10' }] })
+      .expect(404);
+  });
+});
+
+describe('Product Swagger & Documentation Verification', () => {
+  it('includes Product image and specifications routes in OpenAPI specification', async () => {
+    const res = await api().get('/api/docs.json').expect(200);
+    expect(res.body.paths).toHaveProperty('/products/{id}/image');
+    expect(res.body.paths['/products/{id}/image']).toHaveProperty('put');
+    expect(res.body.paths['/products/{id}/image']).toHaveProperty('delete');
+    expect(res.body.paths).toHaveProperty('/products/{id}/specifications');
+    expect(res.body.paths['/products/{id}/specifications']).toHaveProperty('put');
   });
 });

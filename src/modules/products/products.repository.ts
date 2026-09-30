@@ -8,7 +8,12 @@ import {
   updatedBy,
 } from '../../shared/database/soft-delete';
 import { toSkipTake } from '../../shared/http';
-import type { CreateProductBody, ListProductsQuery, UpdateProductBody } from './products.schema';
+import type {
+  CreateProductBody,
+  ListProductsQuery,
+  ProductSpecificationItem,
+  UpdateProductBody,
+} from './products.schema';
 
 const productIncludes = {
   brand: { select: { id: true, name: true, slug: true } },
@@ -60,6 +65,17 @@ export const productsRepository = {
     });
   },
 
+  isMediaUrlReferenced(url: string): Promise<boolean> {
+    return prisma.product
+      .count({
+        where: {
+          imageUrl: url,
+          ...notDeleted,
+        },
+      })
+      .then((count) => count > 0);
+  },
+
   async findMany(query: ListProductsQuery): Promise<{ items: ProductRecord[]; total: number }> {
     const where: Prisma.ProductWhereInput = {
       ...notDeleted,
@@ -101,6 +117,11 @@ export const productsRepository = {
         priceVisibility: data.priceVisibility,
         status: data.status,
         hotDeal: data.hotDeal,
+        imageUrl: null,
+        specifications:
+          data.specifications !== undefined && data.specifications !== null
+            ? (data.specifications as unknown as Prisma.InputJsonValue)
+            : Prisma.DbNull,
         ...createdBy(actorId),
       },
       include: productIncludes,
@@ -124,6 +145,39 @@ export const productsRepository = {
         ...(data.priceVisibility !== undefined && { priceVisibility: data.priceVisibility }),
         ...(data.status !== undefined && { status: data.status }),
         ...(data.hotDeal !== undefined && { hotDeal: data.hotDeal }),
+        ...(data.specifications !== undefined && {
+          specifications:
+            data.specifications !== null
+              ? (data.specifications as unknown as Prisma.InputJsonValue)
+              : Prisma.DbNull,
+        }),
+        ...updatedBy(actorId),
+      },
+      include: productIncludes,
+    });
+  },
+
+  updateImage(id: string, imageUrl: string | null, actorId: string): Promise<ProductRecord> {
+    return prisma.product.update({
+      where: { id },
+      data: {
+        imageUrl,
+        ...updatedBy(actorId),
+      },
+      include: productIncludes,
+    });
+  },
+
+  updateSpecifications(
+    id: string,
+    specifications: ProductSpecificationItem[] | null,
+    actorId: string
+  ): Promise<ProductRecord> {
+    return prisma.product.update({
+      where: { id },
+      data: {
+        specifications:
+          specifications !== null ? (specifications as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
         ...updatedBy(actorId),
       },
       include: productIncludes,

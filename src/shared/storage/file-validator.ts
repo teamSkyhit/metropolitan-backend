@@ -54,6 +54,7 @@ export function validateImageContent(buffer: Buffer): ValidatedImage {
 export const UPLOAD_LIMITS = {
   LOGO_MAX_BYTES: 2 * 1024 * 1024, // 2 MB
   BANNER_MAX_BYTES: 5 * 1024 * 1024, // 5 MB
+  PRODUCT_IMAGE_MAX_BYTES: 5 * 1024 * 1024, // 5 MB
 } as const;
 
 export function validateFileSize(size: number, maxBytes: number, fieldName = 'File'): void {

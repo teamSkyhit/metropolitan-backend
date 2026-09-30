@@ -47,6 +47,7 @@ model User {
   assignedEnquiries    Enquiry[]             @relation("EnquiryAssignee")
   enquiryFollowUps     EnquiryFollowUp[]
   enquiryStatusChanges EnquiryStatusChange[]
+  uploadedMedia        Media[]               @relation("MediaUploader")
 
   @@index([role])
   @@index([deletedAt, createdAt])
@@ -243,6 +244,8 @@ model Product {
   priceVisibility Boolean       @default(true) @map("price_visibility")
   status          ProductStatus @default(DRAFT)
   hotDeal         Boolean       @default(false) @map("hot_deal")
+  imageUrl        String?       @map("image_url") @db.VarChar(500)
+  specifications  Json?         @db.JsonB
   createdAt       DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt       DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
   deletedAt       DateTime?     @map("deleted_at") @db.Timestamptz(3)
@@ -260,4 +263,26 @@ model Product {
   @@index([name])
   @@index([sku])
   @@map("products")
+}
+
+/// Uploaded media asset tracked in CRM Media Library.
+model Media {
+  id           String    @id @default(uuid()) @db.Uuid
+  fileName     String    @map("file_name") @db.VarChar(255)
+  storageKey   String    @map("storage_key") @db.VarChar(500)
+  publicUrl    String    @map("public_url") @db.VarChar(500)
+  mimeType     String    @map("mime_type") @db.VarChar(100)
+  fileSize     Int       @map("file_size")
+  uploadedById String?   @map("uploaded_by_id") @db.Uuid
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt    DateTime? @map("deleted_at") @db.Timestamptz(3)
+
+  uploadedBy User? @relation("MediaUploader", fields: [uploadedById], references: [id], onDelete: SetNull)
+
+  @@index([deletedAt, createdAt])
+  @@index([fileName])
+  @@index([mimeType])
+  @@index([publicUrl])
+  @@map("media")
 }

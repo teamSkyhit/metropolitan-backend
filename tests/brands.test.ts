@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { BrandsErrorCode } from '../src/modules/brands/brands.schema';
+import { storageService } from '../src/shared/storage';
 import { api } from './helpers/app';
 import { signInAs, type Session } from './helpers/auth';
 import { prisma, resetDatabase } from './helpers/db';
@@ -24,6 +25,14 @@ const sampleBrand = {
   isActive: true,
   sortOrder: 10,
 };
+
+const validPngBuffer = Buffer.from([
+  0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+]);
+const validJpgBuffer = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01]);
+const validWebpBuffer = Buffer.from([
+  0x52, 0x49, 0x46, 0x46, 0x24, 0x00, 0x00, 0x00, 0x57, 0x45, 0x42, 0x50, 0x56, 0x50, 0x38, 0x20,
+]);
 
 describe('Brands Access Control & Authentication', () => {
   it('rejects unauthenticated requests on all brand endpoints with 401', async () => {
@@ -638,5 +647,341 @@ describe('POST /api/v1/brands/:id/restore', () => {
 
   it('returns 404 when restoring a nonexistent brand', async () => {
     await api().post(`/api/v1/brands/${randomUUID()}/restore`).set(admin.auth).expect(404);
+  });
+});
+
+describe('Brand Logo Upload, Replacement & Deletion (PUT & DELETE /api/v1/brands/:id/logo)', () => {
+  it('uploads valid brand logo (PNG) with field "logo" via PUT /api/v1/brands/:id/logo', async () => {
+    const created = await api().post('/api/v1/brands').set(admin.auth).send(sampleBrand).expect(201);
+    const id = created.body.data.id;
+
+    const res = await api()
+      .put(`/api/v1/brands/${id}/logo`)
+      .set(admin.auth)
+      .attach('logo', validPngBuffer, 'brand-logo.png')
+      .expect(200);
+
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.logoUrl).toMatch(/\/brands\/logos\/.*\.png$/);
+
+    const inDb = await prisma.brand.findUniqueOrThrow({ where: { id } });
+    expect(inDb.logoUrl).toBe(res.body.data.logoUrl);
+  });
+
+  it('uploads valid brand logo (WebP) with field "logo" via PUT /api/v1/brands/:id/logo', async () => {
+    const created = await api().post('/api/v1/brands').set(admin.auth).send(sampleBrand).expect(201);
+    const id = created.body.data.id;
+
+    const res = await api()
+      .put(`/api/v1/brands/${id}/logo`)
+      .set(admin.auth)
+      .attach('logo', validWebpBuffer, 'brand-logo.webp')
+      .expect(200);
+
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.logoUrl).toMatch(/\/brands\/logos\/.*\.webp$/);
+  });
+
+  it('rejects brand logo upload with wrong field name with 400', async () => {
+    const created = await api().post('/api/v1/brands').set(admin.auth).send(sampleBrand).expect(201);
+    const id = created.body.data.id;
+
+    await api()
+      .put(`/api/v1/brands/${id}/logo`)
+      .set(admin.auth)
+      .attach('file', validJpgBuffer, 'brand-logo.jpg')
+      .expect(400);
+
+    await api()
+      .put(`/api/v1/brands/${id}/logo`)
+      .set(admin.auth)
+      .attach('image', validJpgBuffer, 'brand-logo.jpg')
+      .expect(400);
+  });
+
+  it('rejects brand logo upload with two files with 400', async () => {
+    const created = await api().post('/api/v1/brands').set(admin.auth).send(sampleBrand).expect(201);
+    const id = created.body.data.id;
+
+    await api()
+      .put(`/api/v1/brands/${id}/logo`)
+      .set(admin.auth)
+      .attach('logo', validPngBuffer, 'logo1.png')
+      .attach('logo', validJpgBuffer, 'logo2.jpg')
+      .expect(400);
+  });
+
+  it('rejects brand logo upload when no file is attached with 400', async () => {
+    const created = await api().post('/api/v1/brands').set(admin.auth).send(sampleBrand).expect(201);
+    const id = created.body.data.id;
+
+    await api().put(`/api/v1/brands/${id}/logo`).set(admin.auth).send({ someField: 'value' }).expect(400);
+  });
+
+  it('removes brand logo via DELETE /api/v1/brands/:id/logo', async () => {
+    const created = await api().post('/api/v1/brands').set(admin.auth).send(sampleBrand).expect(201);
+    const id = created.body.data.id;
+
+    const res = await api().delete(`/api/v1/brands/${id}/logo`).set(admin.auth).expect(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.logoUrl).toBeNull();
+
+    const inDb = await prisma.brand.findUniqueOrThrow({ where: { id } });
+    expect(inDb.logoUrl).toBeNull();
+  });
+
+  it('safely replaces existing logo, updates URL and deletes old stored file', async () => {
+    const created = await api().post('/api/v1/brands').set(admin.auth).send(sampleBrand).expect(201);
+    const id = created.body.data.id;
+
+    const first = await api()
+      .put(`/api/v1/brands/${id}/logo`)
+      .set(admin.auth)
+      .attach('logo', validPngBuffer, 'first-logo.png')
+      .expect(200);
+    const firstUrl = first.body.data.logoUrl;
+    expect(firstUrl).toBeDefined();
+
+    const second = await api()
+      .put(`/api/v1/brands/${id}/logo`)
+      .set(admin.auth)
+      .attach('logo', validJpgBuffer, 'second-logo.jpg')
+      .expect(200);
+    const secondUrl = second.body.data.logoUrl;
+    expect(secondUrl).toBeDefined();
+    expect(secondUrl).not.toBe(firstUrl);
+
+    const inDb = await prisma.brand.findUniqueOrThrow({ where: { id } });
+    expect(inDb.logoUrl).toBe(secondUrl);
+  });
+
+  it('failed replacement keeps old logo image and unchanged DB URL', async () => {
+    const created = await api().post('/api/v1/brands').set(admin.auth).send(sampleBrand).expect(201);
+    const id = created.body.data.id;
+
+    const first = await api()
+      .put(`/api/v1/brands/${id}/logo`)
+      .set(admin.auth)
+      .attach('logo', validPngBuffer, 'initial-logo.png')
+      .expect(200);
+    const initialUrl = first.body.data.logoUrl;
+
+    // Fail due to invalid SVG content
+    const svgBuffer = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"></svg>');
+    await api()
+      .put(`/api/v1/brands/${id}/logo`)
+      .set(admin.auth)
+      .attach('logo', svgBuffer, 'vector.svg')
+      .expect(400);
+
+    const inDbAfterInvalid = await prisma.brand.findUniqueOrThrow({ where: { id } });
+    expect(inDbAfterInvalid.logoUrl).toBe(initialUrl);
+
+    // Fail due to storage upload failure
+    const uploadSpy = vi.spyOn(storageService, 'upload').mockRejectedValueOnce(new Error('Disk write error'));
+    try {
+      await api()
+        .put(`/api/v1/brands/${id}/logo`)
+        .set(admin.auth)
+        .attach('logo', validPngBuffer, 'next-logo.png')
+        .expect(500);
+
+      const inDbAfterUploadFail = await prisma.brand.findUniqueOrThrow({ where: { id } });
+      expect(inDbAfterUploadFail.logoUrl).toBe(initialUrl);
+    } finally {
+      uploadSpy.mockRestore();
+    }
+  });
+
+  it('cleanup failure of old logo does not break successful update', async () => {
+    const created = await api().post('/api/v1/brands').set(admin.auth).send(sampleBrand).expect(201);
+    const id = created.body.data.id;
+
+    const first = await api()
+      .put(`/api/v1/brands/${id}/logo`)
+      .set(admin.auth)
+      .attach('logo', validPngBuffer, 'first-logo.png')
+      .expect(200);
+    const firstUrl = first.body.data.logoUrl;
+
+    const deleteSpy = vi
+      .spyOn(storageService, 'delete')
+      .mockRejectedValueOnce(new Error('Delete disk error'));
+    try {
+      const res = await api()
+        .put(`/api/v1/brands/${id}/logo`)
+        .set(admin.auth)
+        .attach('logo', validJpgBuffer, 'second-logo.jpg')
+        .expect(200);
+
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.logoUrl).not.toBe(firstUrl);
+
+      const inDb = await prisma.brand.findUniqueOrThrow({ where: { id } });
+      expect(inDb.logoUrl).toBe(res.body.data.logoUrl);
+    } finally {
+      deleteSpy.mockRestore();
+    }
+  });
+});
+
+describe('Brand Banner Upload, Replacement & Deletion (PUT & DELETE /api/v1/brands/:id/banner)', () => {
+  it('uploads valid brand banner (PNG) with field "banner" via PUT /api/v1/brands/:id/banner', async () => {
+    const created = await api().post('/api/v1/brands').set(admin.auth).send(sampleBrand).expect(201);
+    const id = created.body.data.id;
+
+    const res = await api()
+      .put(`/api/v1/brands/${id}/banner`)
+      .set(admin.auth)
+      .attach('banner', validPngBuffer, 'brand-banner.png')
+      .expect(200);
+
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.bannerUrl).toMatch(/\/brands\/banners\/.*\.png$/);
+
+    const inDb = await prisma.brand.findUniqueOrThrow({ where: { id } });
+    expect(inDb.bannerUrl).toBe(res.body.data.bannerUrl);
+  });
+
+  it('rejects brand banner upload with wrong field name with 400', async () => {
+    const created = await api().post('/api/v1/brands').set(admin.auth).send(sampleBrand).expect(201);
+    const id = created.body.data.id;
+
+    await api()
+      .put(`/api/v1/brands/${id}/banner`)
+      .set(admin.auth)
+      .attach('file', validJpgBuffer, 'brand-banner.jpg')
+      .expect(400);
+
+    await api()
+      .put(`/api/v1/brands/${id}/banner`)
+      .set(admin.auth)
+      .attach('logo', validJpgBuffer, 'brand-banner.jpg')
+      .expect(400);
+  });
+
+  it('rejects brand banner upload with two files with 400', async () => {
+    const created = await api().post('/api/v1/brands').set(admin.auth).send(sampleBrand).expect(201);
+    const id = created.body.data.id;
+
+    await api()
+      .put(`/api/v1/brands/${id}/banner`)
+      .set(admin.auth)
+      .attach('banner', validPngBuffer, 'banner1.png')
+      .attach('banner', validJpgBuffer, 'banner2.jpg')
+      .expect(400);
+  });
+
+  it('rejects brand banner upload when no file is attached with 400', async () => {
+    const created = await api().post('/api/v1/brands').set(admin.auth).send(sampleBrand).expect(201);
+    const id = created.body.data.id;
+
+    await api().put(`/api/v1/brands/${id}/banner`).set(admin.auth).send({ someField: 'value' }).expect(400);
+  });
+
+  it('removes brand banner via DELETE /api/v1/brands/:id/banner', async () => {
+    const created = await api().post('/api/v1/brands').set(admin.auth).send(sampleBrand).expect(201);
+    const id = created.body.data.id;
+
+    const res = await api().delete(`/api/v1/brands/${id}/banner`).set(admin.auth).expect(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.bannerUrl).toBeNull();
+
+    const inDb = await prisma.brand.findUniqueOrThrow({ where: { id } });
+    expect(inDb.bannerUrl).toBeNull();
+  });
+
+  it('safely replaces existing banner, updates URL and deletes old stored file', async () => {
+    const created = await api().post('/api/v1/brands').set(admin.auth).send(sampleBrand).expect(201);
+    const id = created.body.data.id;
+
+    const first = await api()
+      .put(`/api/v1/brands/${id}/banner`)
+      .set(admin.auth)
+      .attach('banner', validPngBuffer, 'first-banner.png')
+      .expect(200);
+    const firstUrl = first.body.data.bannerUrl;
+    expect(firstUrl).toBeDefined();
+
+    const second = await api()
+      .put(`/api/v1/brands/${id}/banner`)
+      .set(admin.auth)
+      .attach('banner', validJpgBuffer, 'second-banner.jpg')
+      .expect(200);
+    const secondUrl = second.body.data.bannerUrl;
+    expect(secondUrl).toBeDefined();
+    expect(secondUrl).not.toBe(firstUrl);
+
+    const inDb = await prisma.brand.findUniqueOrThrow({ where: { id } });
+    expect(inDb.bannerUrl).toBe(secondUrl);
+  });
+
+  it('failed replacement keeps old banner image and unchanged DB URL', async () => {
+    const created = await api().post('/api/v1/brands').set(admin.auth).send(sampleBrand).expect(201);
+    const id = created.body.data.id;
+
+    const first = await api()
+      .put(`/api/v1/brands/${id}/banner`)
+      .set(admin.auth)
+      .attach('banner', validPngBuffer, 'initial-banner.png')
+      .expect(200);
+    const initialUrl = first.body.data.bannerUrl;
+
+    // Fail due to invalid content (SVG)
+    const svgBuffer = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"></svg>');
+    await api()
+      .put(`/api/v1/brands/${id}/banner`)
+      .set(admin.auth)
+      .attach('banner', svgBuffer, 'vector.svg')
+      .expect(400);
+
+    const inDbAfterInvalid = await prisma.brand.findUniqueOrThrow({ where: { id } });
+    expect(inDbAfterInvalid.bannerUrl).toBe(initialUrl);
+
+    // Fail due to storage upload failure
+    const uploadSpy = vi.spyOn(storageService, 'upload').mockRejectedValueOnce(new Error('Disk write error'));
+    try {
+      await api()
+        .put(`/api/v1/brands/${id}/banner`)
+        .set(admin.auth)
+        .attach('banner', validPngBuffer, 'next-banner.png')
+        .expect(500);
+
+      const inDbAfterUploadFail = await prisma.brand.findUniqueOrThrow({ where: { id } });
+      expect(inDbAfterUploadFail.bannerUrl).toBe(initialUrl);
+    } finally {
+      uploadSpy.mockRestore();
+    }
+  });
+
+  it('cleanup failure of old banner does not break successful update', async () => {
+    const created = await api().post('/api/v1/brands').set(admin.auth).send(sampleBrand).expect(201);
+    const id = created.body.data.id;
+
+    const first = await api()
+      .put(`/api/v1/brands/${id}/banner`)
+      .set(admin.auth)
+      .attach('banner', validPngBuffer, 'first-banner.png')
+      .expect(200);
+    const firstUrl = first.body.data.bannerUrl;
+
+    const deleteSpy = vi
+      .spyOn(storageService, 'delete')
+      .mockRejectedValueOnce(new Error('Delete disk error'));
+    try {
+      const res = await api()
+        .put(`/api/v1/brands/${id}/banner`)
+        .set(admin.auth)
+        .attach('banner', validJpgBuffer, 'second-banner.jpg')
+        .expect(200);
+
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.bannerUrl).not.toBe(firstUrl);
+
+      const inDb = await prisma.brand.findUniqueOrThrow({ where: { id } });
+      expect(inDb.bannerUrl).toBe(res.body.data.bannerUrl);
+    } finally {
+      deleteSpy.mockRestore();
+    }
   });
 });
