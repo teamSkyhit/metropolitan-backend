@@ -201,9 +201,7 @@ export const brandsService = {
     validateFileSize(file.size, UPLOAD_LIMITS.LOGO_MAX_BYTES, 'Logo');
     const validated = validateImageContent(file.buffer);
 
-    if (brand.logoUrl && !brand.logoUrl.includes('/media/')) {
-      await storageService.delete(brand.logoUrl);
-    }
+    const oldLogoUrl = brand.logoUrl;
 
     const stored = await storageService.upload(
       {
@@ -216,6 +214,11 @@ export const brandsService = {
     );
 
     const updated = await brandsRepository.updateLogo(id, stored.url, actorId);
+
+    if (oldLogoUrl && !oldLogoUrl.includes('/media/')) {
+      await storageService.delete(oldLogoUrl).catch(() => {});
+    }
+
     return toBrandDto(updated);
   },
 
@@ -223,11 +226,13 @@ export const brandsService = {
     const brand = await brandsRepository.findById(id);
     if (!brand) throw AppError.notFound('Brand');
 
-    if (brand.logoUrl && !brand.logoUrl.includes('/media/')) {
-      await storageService.delete(brand.logoUrl);
+    const oldLogoUrl = brand.logoUrl;
+    const updated = await brandsRepository.updateLogo(id, null, actorId);
+
+    if (oldLogoUrl && !oldLogoUrl.includes('/media/')) {
+      await storageService.delete(oldLogoUrl).catch(() => {});
     }
 
-    const updated = await brandsRepository.updateLogo(id, null, actorId);
     return toBrandDto(updated);
   },
 
@@ -238,9 +243,7 @@ export const brandsService = {
     validateFileSize(file.size, UPLOAD_LIMITS.BANNER_MAX_BYTES, 'Banner');
     const validated = validateImageContent(file.buffer);
 
-    if (brand.bannerUrl && !brand.bannerUrl.includes('/media/')) {
-      await storageService.delete(brand.bannerUrl);
-    }
+    const oldBannerUrl = brand.bannerUrl;
 
     const stored = await storageService.upload(
       {
@@ -253,6 +256,11 @@ export const brandsService = {
     );
 
     const updated = await brandsRepository.updateBanner(id, stored.url, actorId);
+
+    if (oldBannerUrl && !oldBannerUrl.includes('/media/')) {
+      await storageService.delete(oldBannerUrl).catch(() => {});
+    }
+
     return toBrandDto(updated);
   },
 
@@ -260,11 +268,13 @@ export const brandsService = {
     const brand = await brandsRepository.findById(id);
     if (!brand) throw AppError.notFound('Brand');
 
-    if (brand.bannerUrl && !brand.bannerUrl.includes('/media/')) {
-      await storageService.delete(brand.bannerUrl);
+    const oldBannerUrl = brand.bannerUrl;
+    const updated = await brandsRepository.updateBanner(id, null, actorId);
+
+    if (oldBannerUrl && !oldBannerUrl.includes('/media/')) {
+      await storageService.delete(oldBannerUrl).catch(() => {});
     }
 
-    const updated = await brandsRepository.updateBanner(id, null, actorId);
     return toBrandDto(updated);
   },
 

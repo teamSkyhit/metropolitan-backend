@@ -111,28 +111,33 @@ describe('Media Upload (POST /api/v1/media/upload)', () => {
     expect(inDb.fileSize).toBe(validPngBuffer.length);
   });
 
-  it('accepts upload with field name "image"', async () => {
-    const res = await api()
+  it('rejects upload with wrong field name with 400', async () => {
+    const resImage = await api()
       .post('/api/v1/media/upload')
       .set(admin.auth)
       .attach('image', validJpgBuffer, 'product-photo.jpg')
-      .expect(201);
+      .expect(400);
 
-    expect(res.body.data.mimeType).toBe('image/jpeg');
-    expect(res.body.data.fileName).toBe('product-photo.jpg');
-    expect(res.body.data.publicUrl).toMatch(/^\/uploads\/media\/.*\.jpg$/);
-  });
+    expect(resImage.body.success).toBe(false);
 
-  it('accepts upload with field name "media"', async () => {
-    const res = await api()
+    const resMedia = await api()
       .post('/api/v1/media/upload')
       .set(admin.auth)
       .attach('media', validWebpBuffer, 'promo-flyer.webp')
-      .expect(201);
+      .expect(400);
 
-    expect(res.body.data.mimeType).toBe('image/webp');
-    expect(res.body.data.fileName).toBe('promo-flyer.webp');
-    expect(res.body.data.publicUrl).toMatch(/^\/uploads\/media\/.*\.webp$/);
+    expect(resMedia.body.success).toBe(false);
+  });
+
+  it('rejects upload with two files with 400', async () => {
+    const res = await api()
+      .post('/api/v1/media/upload')
+      .set(admin.auth)
+      .attach('file', validPngBuffer, 'file1.png')
+      .attach('file', validJpgBuffer, 'file2.jpg')
+      .expect(400);
+
+    expect(res.body.success).toBe(false);
   });
 
   it('generates random unique storage keys even for identical filenames', async () => {
@@ -291,7 +296,7 @@ describe('Referenced-Media Delete Protection & Safe Deletion (DELETE /api/v1/med
       .send({ name: 'Cat P', slug: 'cat-p' })
       .expect(201);
 
-    // Create product referencing media.publicUrl
+    // Create product and associate media.publicUrl
     const productRes = await api()
       .post('/api/v1/products')
       .set(admin.auth)
@@ -300,9 +305,13 @@ describe('Referenced-Media Delete Protection & Safe Deletion (DELETE /api/v1/med
         sku: 'SKU-PROT-1',
         brandId: brandRes.body.data.id,
         categoryId: catRes.body.data.id,
-        imageUrl: media.publicUrl,
       })
       .expect(201);
+
+    await prisma.product.update({
+      where: { id: productRes.body.data.id },
+      data: { imageUrl: media.publicUrl },
+    });
 
     // Attempt to delete media -> Expect 409
     const deleteRes = await api().delete(`/api/v1/media/${media.id}`).set(admin.auth).expect(409);
@@ -411,9 +420,13 @@ describe('Referenced-Media Delete Protection & Safe Deletion (DELETE /api/v1/med
         sku: 'SKU-SHARED-1',
         brandId: brandRes.body.data.id,
         categoryId: catRes.body.data.id,
-        imageUrl: media.publicUrl,
       })
       .expect(201);
+
+    await prisma.product.update({
+      where: { id: productRes.body.data.id },
+      data: { imageUrl: media.publicUrl },
+    });
 
     // Remove the product's image via direct image endpoint
     await api().delete(`/api/v1/products/${productRes.body.data.id}/image`).set(admin.auth).expect(200);

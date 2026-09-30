@@ -23,7 +23,7 @@ productsRouter.put(
   authorize(Permission.PRODUCTS_UPDATE),
   requireFileUpload({
     maxBytes: UPLOAD_LIMITS.PRODUCT_IMAGE_MAX_BYTES,
-    fieldNames: ['file', 'image'],
+    fieldName: 'image',
     entityName: 'Product image',
   }),
   productsController.uploadImage

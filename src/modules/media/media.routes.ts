@@ -18,7 +18,7 @@ mediaRouter.post(
   authorize(Permission.MEDIA_CREATE),
   requireFileUpload({
     maxBytes: UPLOAD_LIMITS.PRODUCT_IMAGE_MAX_BYTES,
-    fieldNames: ['file', 'image', 'media'],
+    fieldName: 'file',
     entityName: 'Media file',
   }),
   mediaController.upload

@@ -24,7 +24,7 @@ export function registerProductsDocs(registry: OpenAPIRegistry): void {
     content: {
       'multipart/form-data': {
         schema: z.object({
-          file: z.string().meta({ format: 'binary', description: 'PNG, JPEG, or WebP image (max 5 MB)' }),
+          image: z.string().meta({ format: 'binary', description: 'PNG, JPEG, or WebP image (max 5 MB)' }),
         }),
       },
     },

@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CategoriesErrorCode } from '../src/modules/categories/categories.schema';
 import * as permissionsModule from '../src/shared/security/permissions';
+import { storageService } from '../src/shared/storage';
 import { api } from './helpers/app';
 import { signInAs, type Session } from './helpers/auth';
 import { prisma, resetDatabase } from './helpers/db';
@@ -958,11 +959,134 @@ describe('Banner Upload & Handling (PUT /api/v1/categories/:id/banner)', () => {
     const res = await api()
       .put(`/api/v1/categories/${id}/banner`)
       .set(admin.auth)
-      .attach('file', validJpgBuffer, 'banner.jpg')
+      .attach('banner', validJpgBuffer, 'banner.jpg')
       .expect(200);
 
     expect(res.body.success).toBe(true);
     expect(res.body.data.bannerUrl).toMatch(/\/categories\/banners\/.*\.jpg$/);
+  });
+
+  it('rejects banner upload with wrong field name with 400', async () => {
+    const created = await api().post('/api/v1/categories').set(admin.auth).send(sampleCategory).expect(201);
+    const id = created.body.data.id;
+
+    await api()
+      .put(`/api/v1/categories/${id}/banner`)
+      .set(admin.auth)
+      .attach('file', validJpgBuffer, 'banner.jpg')
+      .expect(400);
+
+    await api()
+      .put(`/api/v1/categories/${id}/banner`)
+      .set(admin.auth)
+      .attach('image', validJpgBuffer, 'banner.jpg')
+      .expect(400);
+  });
+
+  it('rejects banner upload with two files with 400', async () => {
+    const created = await api().post('/api/v1/categories').set(admin.auth).send(sampleCategory).expect(201);
+    const id = created.body.data.id;
+
+    await api()
+      .put(`/api/v1/categories/${id}/banner`)
+      .set(admin.auth)
+      .attach('banner', validPngBuffer, 'banner1.png')
+      .attach('banner', validJpgBuffer, 'banner2.jpg')
+      .expect(400);
+  });
+
+  it('safely replaces existing banner, updates URL and deletes old stored file', async () => {
+    const created = await api().post('/api/v1/categories').set(admin.auth).send(sampleCategory).expect(201);
+    const id = created.body.data.id;
+
+    const first = await api()
+      .put(`/api/v1/categories/${id}/banner`)
+      .set(admin.auth)
+      .attach('banner', validPngBuffer, 'first.png')
+      .expect(200);
+    const firstUrl = first.body.data.bannerUrl;
+    expect(firstUrl).toBeDefined();
+
+    const second = await api()
+      .put(`/api/v1/categories/${id}/banner`)
+      .set(admin.auth)
+      .attach('banner', validJpgBuffer, 'second.jpg')
+      .expect(200);
+    const secondUrl = second.body.data.bannerUrl;
+    expect(secondUrl).toBeDefined();
+    expect(secondUrl).not.toBe(firstUrl);
+
+    const inDb = await prisma.category.findUniqueOrThrow({ where: { id } });
+    expect(inDb.bannerUrl).toBe(secondUrl);
+  });
+
+  it('failed replacement keeps old banner image and unchanged DB URL', async () => {
+    const created = await api().post('/api/v1/categories').set(admin.auth).send(sampleCategory).expect(201);
+    const id = created.body.data.id;
+
+    const first = await api()
+      .put(`/api/v1/categories/${id}/banner`)
+      .set(admin.auth)
+      .attach('banner', validPngBuffer, 'initial.png')
+      .expect(200);
+    const initialUrl = first.body.data.bannerUrl;
+
+    // Fail due to invalid content (SVG)
+    const svgBuffer = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"></svg>');
+    await api()
+      .put(`/api/v1/categories/${id}/banner`)
+      .set(admin.auth)
+      .attach('banner', svgBuffer, 'vector.svg')
+      .expect(400);
+
+    const inDbAfterInvalid = await prisma.category.findUniqueOrThrow({ where: { id } });
+    expect(inDbAfterInvalid.bannerUrl).toBe(initialUrl);
+
+    // Fail due to storage upload failure
+    const uploadSpy = vi.spyOn(storageService, 'upload').mockRejectedValueOnce(new Error('Disk error'));
+    try {
+      await api()
+        .put(`/api/v1/categories/${id}/banner`)
+        .set(admin.auth)
+        .attach('banner', validPngBuffer, 'next.png')
+        .expect(500);
+
+      const inDbAfterUploadFail = await prisma.category.findUniqueOrThrow({ where: { id } });
+      expect(inDbAfterUploadFail.bannerUrl).toBe(initialUrl);
+    } finally {
+      uploadSpy.mockRestore();
+    }
+  });
+
+  it('cleanup failure of old banner does not break successful update', async () => {
+    const created = await api().post('/api/v1/categories').set(admin.auth).send(sampleCategory).expect(201);
+    const id = created.body.data.id;
+
+    const first = await api()
+      .put(`/api/v1/categories/${id}/banner`)
+      .set(admin.auth)
+      .attach('banner', validPngBuffer, 'first.png')
+      .expect(200);
+    const firstUrl = first.body.data.bannerUrl;
+
+    const deleteSpy = vi
+      .spyOn(storageService, 'delete')
+      .mockRejectedValueOnce(new Error('Delete disk error'));
+    try {
+      const res = await api()
+        .put(`/api/v1/categories/${id}/banner`)
+        .set(admin.auth)
+        .attach('banner', validJpgBuffer, 'second.jpg')
+        .expect(200);
+
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.bannerUrl).not.toBe(firstUrl);
+
+      const inDb = await prisma.category.findUniqueOrThrow({ where: { id } });
+      expect(inDb.bannerUrl).toBe(res.body.data.bannerUrl);
+    } finally {
+      deleteSpy.mockRestore();
+    }
   });
 
   it('rejects empty file upload with 400', async () => {

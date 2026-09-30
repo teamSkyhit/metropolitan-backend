@@ -231,9 +231,7 @@ export const categoriesService = {
     validateFileSize(file.size, UPLOAD_LIMITS.BANNER_MAX_BYTES, 'Banner');
     const validated = validateImageContent(file.buffer);
 
-    if (category.bannerUrl && !category.bannerUrl.includes('/media/')) {
-      await storageService.delete(category.bannerUrl);
-    }
+    const oldBannerUrl = category.bannerUrl;
 
     const stored = await storageService.upload(
       {
@@ -246,6 +244,11 @@ export const categoriesService = {
     );
 
     const updated = await categoriesRepository.updateBanner(id, stored.url, actorId);
+
+    if (oldBannerUrl && !oldBannerUrl.includes('/media/')) {
+      await storageService.delete(oldBannerUrl).catch(() => {});
+    }
+
     return toCategoryDto(updated);
   },
 
@@ -253,11 +256,13 @@ export const categoriesService = {
     const category = await categoriesRepository.findById(id);
     if (!category) throw AppError.notFound('Category');
 
-    if (category.bannerUrl && !category.bannerUrl.includes('/media/')) {
-      await storageService.delete(category.bannerUrl);
+    const oldBannerUrl = category.bannerUrl;
+    const updated = await categoriesRepository.updateBanner(id, null, actorId);
+
+    if (oldBannerUrl && !oldBannerUrl.includes('/media/')) {
+      await storageService.delete(oldBannerUrl).catch(() => {});
     }
 
-    const updated = await categoriesRepository.updateBanner(id, null, actorId);
     return toCategoryDto(updated);
   },
 

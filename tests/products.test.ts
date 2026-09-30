@@ -259,6 +259,20 @@ describe('Product Creation & Validation', () => {
       .expect(400);
   });
 
+  it('rejects product creation with imageUrl in payload with 400', async () => {
+    const brand = await createTestBrand();
+    const category = await createTestCategory();
+
+    await api()
+      .post('/api/v1/products')
+      .set(admin.auth)
+      .send({
+        ...sampleProductPayload(brand.id, category.id),
+        imageUrl: 'https://malicious.com/exploit.png',
+      })
+      .expect(400);
+  });
+
   it('rejects missing or invalid brandId with 400', async () => {
     const category = await createTestCategory();
 
@@ -1008,6 +1022,22 @@ describe('Product Partial Updates (PATCH)', () => {
 
     await api().patch(`/api/v1/products/${created.body.data.id}`).set(admin.auth).send({}).expect(400);
   });
+
+  it('rejects product update with imageUrl in payload with 400', async () => {
+    const brand = await createTestBrand();
+    const cat = await createTestCategory();
+    const created = await api()
+      .post('/api/v1/products')
+      .set(admin.auth)
+      .send(sampleProductPayload(brand.id, cat.id))
+      .expect(201);
+
+    await api()
+      .patch(`/api/v1/products/${created.body.data.id}`)
+      .set(admin.auth)
+      .send({ imageUrl: 'https://malicious.com/exploit.png' })
+      .expect(400);
+  });
 });
 
 describe('Product Soft-Delete & Restore', () => {
@@ -1122,7 +1152,7 @@ describe('Product Image Upload, Replacement & Deletion (PUT & DELETE /api/v1/pro
     expect(inDb.imageUrl).toBe(res.body.data.imageUrl);
   });
 
-  it('uploads valid product image (JPEG) using "file" field name via PUT /api/v1/products/:id/image', async () => {
+  it('uploads valid product image (JPEG) via PUT /api/v1/products/:id/image', async () => {
     const brand = await createTestBrand();
     const cat = await createTestCategory();
     const created = await api()
@@ -1135,11 +1165,52 @@ describe('Product Image Upload, Replacement & Deletion (PUT & DELETE /api/v1/pro
     const res = await api()
       .put(`/api/v1/products/${productId}/image`)
       .set(sales.auth)
-      .attach('file', validJpgBuffer, 'product.jpg')
+      .attach('image', validJpgBuffer, 'product.jpg')
       .expect(200);
 
     expect(res.body.success).toBe(true);
     expect(res.body.data.imageUrl).toMatch(/\/products\/images\/.*\.jpg$/);
+  });
+
+  it('rejects product image upload with wrong field name with 400', async () => {
+    const brand = await createTestBrand();
+    const cat = await createTestCategory();
+    const created = await api()
+      .post('/api/v1/products')
+      .set(admin.auth)
+      .send(sampleProductPayload(brand.id, cat.id))
+      .expect(201);
+    const productId = created.body.data.id;
+
+    await api()
+      .put(`/api/v1/products/${productId}/image`)
+      .set(admin.auth)
+      .attach('file', validJpgBuffer, 'product.jpg')
+      .expect(400);
+
+    await api()
+      .put(`/api/v1/products/${productId}/image`)
+      .set(admin.auth)
+      .attach('avatar', validJpgBuffer, 'product.jpg')
+      .expect(400);
+  });
+
+  it('rejects product image upload with two files with 400', async () => {
+    const brand = await createTestBrand();
+    const cat = await createTestCategory();
+    const created = await api()
+      .post('/api/v1/products')
+      .set(admin.auth)
+      .send(sampleProductPayload(brand.id, cat.id))
+      .expect(201);
+    const productId = created.body.data.id;
+
+    await api()
+      .put(`/api/v1/products/${productId}/image`)
+      .set(admin.auth)
+      .attach('image', validPngBuffer, 'product1.png')
+      .attach('image', validJpgBuffer, 'product2.jpg')
+      .expect(400);
   });
 
   it('uploads valid product image (WebP) via PUT /api/v1/products/:id/image', async () => {

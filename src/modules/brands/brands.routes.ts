@@ -23,7 +23,7 @@ brandsRouter.put(
   authorize(Permission.BRANDS_UPDATE),
   requireFileUpload({
     maxBytes: UPLOAD_LIMITS.LOGO_MAX_BYTES,
-    fieldNames: ['file', 'logo'],
+    fieldName: 'logo',
     entityName: 'Logo',
   }),
   brandsController.uploadLogo
@@ -35,7 +35,7 @@ brandsRouter.put(
   authorize(Permission.BRANDS_UPDATE),
   requireFileUpload({
     maxBytes: UPLOAD_LIMITS.BANNER_MAX_BYTES,
-    fieldNames: ['file', 'banner'],
+    fieldName: 'banner',
     entityName: 'Banner',
   }),
   brandsController.uploadBanner

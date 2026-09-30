@@ -22,11 +22,11 @@ export function registerBrandsDocs(registry: OpenAPIRegistry): void {
   const publicTags = ['Public - Brands'];
   const security = [{ [BEARER_AUTH]: [] }];
   const json = (schema: z.ZodType) => ({ content: { 'application/json': { schema } } });
-  const multipart = () => ({
+  const multipart = (fieldName: 'logo' | 'banner') => ({
     content: {
       'multipart/form-data': {
         schema: z.object({
-          file: z.string().meta({ format: 'binary', description: 'PNG, JPEG, or WebP image' }),
+          [fieldName]: z.string().meta({ format: 'binary', description: 'PNG, JPEG, or WebP image' }),
         }),
       },
     },
@@ -156,7 +156,7 @@ export function registerBrandsDocs(registry: OpenAPIRegistry): void {
     summary: 'Upload brand logo',
     description:
       'Requires `brands:update`. Accepts multipart/form-data. Maximum size 2 MB. PNG, JPEG, or WebP.',
-    request: { params: idParamsSchema, body: multipart() },
+    request: { params: idParamsSchema, body: multipart('logo') },
     responses: {
       200: jsonResponse('Logo uploaded', successBody(brandSchema)),
       ...errorResponses(400, 401, 403, 404),
@@ -185,7 +185,7 @@ export function registerBrandsDocs(registry: OpenAPIRegistry): void {
     summary: 'Upload brand banner',
     description:
       'Requires `brands:update`. Accepts multipart/form-data. Maximum size 5 MB. PNG, JPEG, or WebP.',
-    request: { params: idParamsSchema, body: multipart() },
+    request: { params: idParamsSchema, body: multipart('banner') },
     responses: {
       200: jsonResponse('Banner uploaded', successBody(brandSchema)),
       ...errorResponses(400, 401, 403, 404),

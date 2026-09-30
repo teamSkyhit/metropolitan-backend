@@ -61,7 +61,7 @@ export function registerMediaDocs(registry: OpenAPIRegistry): void {
     security,
     summary: 'Upload media asset',
     description:
-      'Requires `media:create`. Accepts multipart/form-data with fields `file`, `image`, or `media`. Maximum 5 MB. PNG, JPEG, or WebP.',
+      'Requires `media:create`. Accepts multipart/form-data with field `file`. Maximum 5 MB. PNG, JPEG, or WebP.',
     request: { body: multipart() },
     responses: {
       201: jsonResponse('Uploaded media asset', successBody(mediaSchema)),

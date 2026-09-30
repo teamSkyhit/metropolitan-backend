@@ -28,17 +28,6 @@ export const productCategorySummarySchema = z.object({
   slug: z.string(),
 });
 
-const mediaUrlSchema = z
-  .string()
-  .trim()
-  .max(500, 'URL cannot exceed 500 characters')
-  .refine(
-    (val) => /^https?:\/\//.test(val) || val.startsWith('/'),
-    'Must be a valid HTTP(S) URL or relative path'
-  )
-  .nullable()
-  .optional();
-
 export const productSpecificationItemSchema = z.object({
   key: z
     .string()
@@ -147,9 +136,9 @@ export const createProductBodySchema = z
     priceVisibility: z.boolean().default(true),
     status: productStatusSchema.default('DRAFT'),
     hotDeal: z.boolean().default(false),
-    imageUrl: mediaUrlSchema,
     specifications: productSpecificationsSchema.nullable().optional(),
   })
+  .strict()
   .meta({ id: 'CreateProductRequest' });
 
 export const updateProductBodySchema = z
@@ -178,9 +167,9 @@ export const updateProductBodySchema = z
     priceVisibility: z.boolean().optional(),
     status: productStatusSchema.optional(),
     hotDeal: z.boolean().optional(),
-    imageUrl: mediaUrlSchema,
     specifications: productSpecificationsSchema.nullable().optional(),
   })
+  .strict()
   .refine((body) => Object.keys(body).length > 0, 'Provide at least one field to update')
   .meta({ id: 'UpdateProductRequest' });
 

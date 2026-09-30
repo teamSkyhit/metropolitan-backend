@@ -117,7 +117,7 @@ export const productsRepository = {
         priceVisibility: data.priceVisibility,
         status: data.status,
         hotDeal: data.hotDeal,
-        imageUrl: data.imageUrl ?? null,
+        imageUrl: null,
         specifications:
           data.specifications !== undefined && data.specifications !== null
             ? (data.specifications as unknown as Prisma.InputJsonValue)
@@ -145,7 +145,6 @@ export const productsRepository = {
         ...(data.priceVisibility !== undefined && { priceVisibility: data.priceVisibility }),
         ...(data.status !== undefined && { status: data.status }),
         ...(data.hotDeal !== undefined && { hotDeal: data.hotDeal }),
-        ...(data.imageUrl !== undefined && { imageUrl: data.imageUrl }),
         ...(data.specifications !== undefined && {
           specifications:
             data.specifications !== null
