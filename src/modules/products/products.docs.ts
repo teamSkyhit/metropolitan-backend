@@ -11,13 +11,17 @@ import { idParamsSchema } from '../../shared/http';
 import {
   createProductBodySchema,
   listProductsQuerySchema,
+  listPublicProductsQuerySchema,
   productSchema,
+  publicProductSchema,
+  publicProductSlugParamsSchema,
   updateProductBodySchema,
   updateProductSpecificationsBodySchema,
 } from './products.schema';
 
 export function registerProductsDocs(registry: OpenAPIRegistry): void {
   const adminTags = ['Products'];
+  const publicTags = ['Public - Products'];
   const security = [{ [BEARER_AUTH]: [] }];
   const json = (schema: z.ZodType) => ({ content: { 'application/json': { schema } } });
   const multipart = () => ({
@@ -27,6 +31,36 @@ export function registerProductsDocs(registry: OpenAPIRegistry): void {
           image: z.string().meta({ format: 'binary', description: 'PNG, JPEG, or WebP image (max 5 MB)' }),
         }),
       },
+    },
+  });
+
+  // ── Public Endpoints ───────────────────────────────────────────────────────
+
+  registry.registerPath({
+    method: 'get',
+    path: '/public/products',
+    tags: publicTags,
+    summary: 'List public catalog products',
+    description:
+      'Public website endpoint. Returns active, published products whose brand and category are also active. Supports database-level pagination, search (name, SKU, brand, category), filters (brand, category, hotDeal), and sorting (latest, oldest, name_asc, name_desc, price_asc, price_desc).',
+    request: { query: listPublicProductsQuerySchema },
+    responses: {
+      200: jsonResponse('Paginated public products', paginatedBody(publicProductSchema)),
+      ...errorResponses(400, 500),
+    },
+  });
+
+  registry.registerPath({
+    method: 'get',
+    path: '/public/products/{slug}',
+    tags: publicTags,
+    summary: 'Get public product by slug, SKU, or ID',
+    description:
+      'Public website endpoint. Returns product details for product pages. Only returns published products with active brand and category. Excludes internal audit fields and CRM-only data.',
+    request: { params: publicProductSlugParamsSchema },
+    responses: {
+      200: jsonResponse('Public product detail', successBody(publicProductSchema)),
+      ...errorResponses(400, 404, 500),
     },
   });
 

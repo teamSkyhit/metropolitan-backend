@@ -187,9 +187,123 @@ export const listProductsQuerySchema = paginationQuerySchema.extend({
   sortOrder: sortOrderSchema,
 });
 
+export const publicProductBrandSchema = z
+  .object({
+    id: z.uuid(),
+    name: z.string(),
+    slug: z.string(),
+    description: z.string().nullable().optional(),
+    logoUrl: z.string().nullable().optional(),
+    bannerUrl: z.string().nullable().optional(),
+  })
+  .meta({ id: 'PublicProductBrand' });
+
+export const publicProductCategorySchema = z
+  .object({
+    id: z.uuid(),
+    name: z.string(),
+    slug: z.string(),
+    description: z.string().nullable().optional(),
+    bannerUrl: z.string().nullable().optional(),
+  })
+  .meta({ id: 'PublicProductCategory' });
+
+/** Public product DTO for website listing and detail views. */
+export const publicProductSchema = z
+  .object({
+    id: z.uuid(),
+    name: z.string(),
+    slug: z.string(),
+    sku: z.string(),
+    description: z.string().nullable(),
+    price: z.number().nullable(),
+    hotDeal: z.boolean(),
+    imageUrl: z.string().nullable(),
+    specifications: z.array(productSpecificationItemSchema).nullable(),
+    brand: publicProductBrandSchema,
+    category: publicProductCategorySchema,
+    createdAt: z.iso.datetime(),
+  })
+  .meta({ id: 'PublicProduct' });
+
+export const publicProductSortSchema = z
+  .enum([
+    'latest',
+    'oldest',
+    'name_asc',
+    'name_desc',
+    'name-asc',
+    'name-desc',
+    'price_asc',
+    'price_desc',
+    'price-asc',
+    'price-desc',
+  ])
+  .default('latest')
+  .transform((val) => {
+    switch (val) {
+      case 'oldest':
+        return 'oldest';
+      case 'name_asc':
+      case 'name-asc':
+        return 'name_asc';
+      case 'name_desc':
+      case 'name-desc':
+        return 'name_desc';
+      case 'price_asc':
+      case 'price-asc':
+        return 'price_asc';
+      case 'price_desc':
+      case 'price-desc':
+        return 'price_desc';
+      case 'latest':
+      default:
+        return 'latest';
+    }
+  });
+
+export const listPublicProductsQuerySchema = paginationQuerySchema.extend({
+  search: z
+    .string()
+    .trim()
+    .min(1)
+    .max(100)
+    .optional()
+    .meta({ description: 'Search across product name, SKU, brand name, and category name' }),
+  brand: z.string().trim().min(1).max(120).optional().meta({ description: 'Filter by brand slug or UUID' }),
+  category: z
+    .string()
+    .trim()
+    .min(1)
+    .max(120)
+    .optional()
+    .meta({ description: 'Filter by category slug or UUID' }),
+  hotDeal: z
+    .enum(['true', 'false'])
+    .transform((value) => value === 'true')
+    .optional()
+    .meta({ description: 'Filter by hot deal status' }),
+  sort: publicProductSortSchema.meta({
+    description: 'Sorting: latest, oldest, name_asc, name_desc, price_asc, price_desc',
+  }),
+});
+
+export const publicProductSlugParamsSchema = z.object({
+  slug: z
+    .string()
+    .trim()
+    .min(1, 'Product identifier (slug, SKU, or ID) is required')
+    .max(120, 'Product identifier cannot exceed 120 characters'),
+});
+
 export type ProductDto = z.infer<typeof productSchema>;
+export type PublicProductDto = z.infer<typeof publicProductSchema>;
+export type PublicProductBrand = z.infer<typeof publicProductBrandSchema>;
+export type PublicProductCategory = z.infer<typeof publicProductCategorySchema>;
 export type CreateProductBody = z.infer<typeof createProductBodySchema>;
 export type UpdateProductBody = z.infer<typeof updateProductBodySchema>;
 export type ListProductsQuery = z.infer<typeof listProductsQuerySchema>;
+export type ListPublicProductsQuery = z.infer<typeof listPublicProductsQuerySchema>;
+export type PublicProductSlugParams = z.infer<typeof publicProductSlugParamsSchema>;
 export type ProductSpecificationItem = z.infer<typeof productSpecificationItemSchema>;
 export type UpdateProductSpecificationsBody = z.infer<typeof updateProductSpecificationsBodySchema>;

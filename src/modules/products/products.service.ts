@@ -3,14 +3,16 @@ import { Prisma } from '@prisma/client';
 import { AppError } from '../../shared/errors';
 import { buildPaginationMeta, type Paginated } from '../../shared/http';
 import { storageService, UPLOAD_LIMITS, validateFileSize, validateImageContent } from '../../shared/storage';
-import { productsRepository, type ProductRecord } from './products.repository';
+import { productsRepository, type ProductRecord, type PublicProductRecord } from './products.repository';
 import {
   normalizeSku,
   ProductsErrorCode,
   type CreateProductBody,
   type ListProductsQuery,
+  type ListPublicProductsQuery,
   type ProductDto,
   type ProductSpecificationItem,
+  type PublicProductDto,
   type UpdateProductBody,
 } from './products.schema';
 
@@ -59,6 +61,48 @@ export function toProductDto(record: ProductRecord): ProductDto {
       : undefined,
     createdAt: record.createdAt.toISOString(),
     updatedAt: record.updatedAt.toISOString(),
+  };
+}
+
+export function generateSlug(name: string): string {
+  return name
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9\s-]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-');
+}
+
+/** Maps database record to Public Product DTO without internal audit and CRM-only fields. */
+export function toPublicProductDto(record: PublicProductRecord): PublicProductDto {
+  return {
+    id: record.id,
+    name: record.name,
+    slug: generateSlug(record.name) || record.sku.toLowerCase(),
+    sku: record.sku,
+    description: record.description,
+    price: record.priceVisibility && record.price !== null ? record.price.toNumber() : null,
+    hotDeal: record.hotDeal,
+    imageUrl: record.imageUrl ?? null,
+    specifications: Array.isArray(record.specifications)
+      ? (record.specifications as unknown as ProductSpecificationItem[])
+      : null,
+    brand: {
+      id: record.brand.id,
+      name: record.brand.name,
+      slug: record.brand.slug,
+      description: record.brand.description,
+      logoUrl: record.brand.logoUrl,
+      bannerUrl: record.brand.bannerUrl,
+    },
+    category: {
+      id: record.category.id,
+      name: record.category.name,
+      slug: record.category.slug,
+      description: record.category.description,
+      bannerUrl: record.category.bannerUrl,
+    },
+    createdAt: record.createdAt.toISOString(),
   };
 }
 
@@ -133,10 +177,24 @@ export const productsService = {
     return { items: items.map(toProductDto), pagination: buildPaginationMeta(query, total) };
   },
 
+  async listPublic(query: ListPublicProductsQuery): Promise<Paginated<PublicProductDto>> {
+    const { items, total } = await productsRepository.findManyPublic(query);
+    return {
+      items: items.map(toPublicProductDto),
+      pagination: buildPaginationMeta(query, total),
+    };
+  },
+
   async getById(id: string): Promise<ProductDto> {
     const record = await productsRepository.findById(id);
     if (!record) throw AppError.notFound('Product');
     return toProductDto(record);
+  },
+
+  async getBySlugPublic(slug: string): Promise<PublicProductDto> {
+    const record = await productsRepository.findByIdOrSkuPublic(slug);
+    if (!record) throw AppError.notFound('Product');
+    return toPublicProductDto(record);
   },
 
   async create(body: CreateProductBody, actorId: string): Promise<ProductDto> {

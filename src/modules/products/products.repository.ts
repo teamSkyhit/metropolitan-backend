@@ -11,6 +11,7 @@ import { toSkipTake } from '../../shared/http';
 import type {
   CreateProductBody,
   ListProductsQuery,
+  ListPublicProductsQuery,
   ProductSpecificationItem,
   UpdateProductBody,
 } from './products.schema';
@@ -23,6 +24,37 @@ const productIncludes = {
 export type ProductRecord = Prisma.ProductGetPayload<{
   include: typeof productIncludes;
 }>;
+
+const publicProductIncludes = {
+  brand: {
+    select: {
+      id: true,
+      name: true,
+      slug: true,
+      description: true,
+      logoUrl: true,
+      bannerUrl: true,
+    },
+  },
+  category: {
+    select: {
+      id: true,
+      name: true,
+      slug: true,
+      description: true,
+      bannerUrl: true,
+    },
+  },
+} as const;
+
+export type PublicProductRecord = Prisma.ProductGetPayload<{
+  include: typeof publicProductIncludes;
+}>;
+
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function isUuid(value: string): boolean {
+  return UUID_REGEX.test(value.trim());
+}
 
 export const productsRepository = {
   findById(id: string): Promise<ProductRecord | null> {
@@ -102,6 +134,128 @@ export const productsRepository = {
     ]);
 
     return { items, total };
+  },
+
+  async findManyPublic(
+    query: ListPublicProductsQuery
+  ): Promise<{ items: PublicProductRecord[]; total: number }> {
+    const conditions: Prisma.ProductWhereInput[] = [
+      { deletedAt: null },
+      { status: 'PUBLISHED' },
+      { brand: { deletedAt: null, isActive: true } },
+      { category: { deletedAt: null, isActive: true } },
+    ];
+
+    if (query.brand) {
+      if (isUuid(query.brand)) {
+        conditions.push({ brandId: query.brand });
+      } else {
+        conditions.push({ brand: { slug: query.brand.toLowerCase() } });
+      }
+    }
+
+    if (query.category) {
+      if (isUuid(query.category)) {
+        conditions.push({ categoryId: query.category });
+      } else {
+        conditions.push({ category: { slug: query.category.toLowerCase() } });
+      }
+    }
+
+    if (query.hotDeal !== undefined) {
+      conditions.push({ hotDeal: query.hotDeal });
+    }
+
+    if (query.search) {
+      conditions.push({
+        OR: [
+          { name: { contains: query.search, mode: 'insensitive' } },
+          { sku: { contains: query.search, mode: 'insensitive' } },
+          { brand: { name: { contains: query.search, mode: 'insensitive' } } },
+          { category: { name: { contains: query.search, mode: 'insensitive' } } },
+        ],
+      });
+    }
+
+    const where: Prisma.ProductWhereInput = { AND: conditions };
+
+    let orderBy: Prisma.ProductOrderByWithRelationInput[];
+    switch (query.sort) {
+      case 'oldest':
+        orderBy = [{ createdAt: 'asc' }, { id: 'asc' }];
+        break;
+      case 'name_asc':
+        orderBy = [{ name: 'asc' }, { id: 'asc' }];
+        break;
+      case 'name_desc':
+        orderBy = [{ name: 'desc' }, { id: 'asc' }];
+        break;
+      case 'price_asc':
+        orderBy = [{ price: 'asc' }, { id: 'asc' }];
+        break;
+      case 'price_desc':
+        orderBy = [{ price: 'desc' }, { id: 'asc' }];
+        break;
+      case 'latest':
+      default:
+        orderBy = [{ createdAt: 'desc' }, { id: 'asc' }];
+        break;
+    }
+
+    const [items, total] = await prisma.$transaction([
+      prisma.product.findMany({
+        where,
+        include: publicProductIncludes,
+        ...toSkipTake(query),
+        orderBy,
+      }),
+      prisma.product.count({ where }),
+    ]);
+
+    return { items, total };
+  },
+
+  async findByIdOrSkuPublic(identifier: string): Promise<PublicProductRecord | null> {
+    const baseWhere: Prisma.ProductWhereInput = {
+      status: 'PUBLISHED',
+      deletedAt: null,
+      brand: { deletedAt: null, isActive: true },
+      category: { deletedAt: null, isActive: true },
+    };
+
+    if (isUuid(identifier)) {
+      const byId = await prisma.product.findFirst({
+        where: {
+          id: identifier,
+          ...baseWhere,
+        },
+        include: publicProductIncludes,
+      });
+      if (byId) return byId;
+    }
+
+    const bySku = await prisma.product.findFirst({
+      where: {
+        sku: identifier.trim().toUpperCase(),
+        ...baseWhere,
+      },
+      include: publicProductIncludes,
+    });
+    if (bySku) return bySku;
+
+    const nameCandidate = identifier.replace(/-/g, ' ').trim();
+    if (nameCandidate.length > 0) {
+      const byName = await prisma.product.findFirst({
+        where: {
+          name: { equals: nameCandidate, mode: 'insensitive' },
+          ...baseWhere,
+        },
+        include: publicProductIncludes,
+      });
+      if (byName) return byName;
+    }
+
+    return null;
   },
 
   create(data: CreateProductBody, actorId: string): Promise<ProductRecord> {
