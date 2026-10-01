@@ -263,7 +263,6 @@ model Product {
   @@index([deletedAt, createdAt])
   @@index([name])
   @@index([sku])
-  @@index([slug])
   @@map("products")
 }
 

@@ -486,6 +486,62 @@ describe('Public Products API', () => {
     expect(sortPriceDesc.body.data[1].id).toBe(pA.id);
   });
 
+  it('treats hidden-price products as unpriced and places them after visible-price products when sorting by price', async () => {
+    const brand = await createTestBrand();
+    const category = await createTestCategory();
+
+    const visibleLow = await createTestProduct({
+      name: 'Visible Low Price',
+      sku: 'VIS-LOW',
+      price: 50.0,
+      priceVisibility: true,
+      brandId: brand.id,
+      categoryId: category.id,
+      status: 'PUBLISHED',
+    });
+
+    const visibleHigh = await createTestProduct({
+      name: 'Visible High Price',
+      sku: 'VIS-HIGH',
+      price: 200.0,
+      priceVisibility: true,
+      brandId: brand.id,
+      categoryId: category.id,
+      status: 'PUBLISHED',
+    });
+
+    // Hidden price is 10.0 (lower than 50.0 and 200.0), but priceVisibility is false
+    const hiddenCheap = await createTestProduct({
+      name: 'Hidden Cheap Machine',
+      sku: 'HID-CHEAP',
+      price: 10.0,
+      priceVisibility: false,
+      brandId: brand.id,
+      categoryId: category.id,
+      status: 'PUBLISHED',
+    });
+
+    // 1. Price Ascending: visible lowest first, then visible highest, then hidden/unpriced
+    const sortAscRes = await api()
+      .get(`/api/v1/public/products?category=${category.id}&sort=price_asc`)
+      .expect(200);
+    const ascIds = sortAscRes.body.data.map((p: { id: string }) => p.id);
+    expect(ascIds.indexOf(visibleLow.id)).toBeLessThan(ascIds.indexOf(visibleHigh.id));
+    expect(ascIds.indexOf(visibleHigh.id)).toBeLessThan(ascIds.indexOf(hiddenCheap.id));
+    const hiddenItemInAsc = sortAscRes.body.data.find((p: { id: string }) => p.id === hiddenCheap.id);
+    expect(hiddenItemInAsc.price).toBeNull();
+
+    // 2. Price Descending: visible highest first, then visible lowest, then hidden/unpriced
+    const sortDescRes = await api()
+      .get(`/api/v1/public/products?category=${category.id}&sort=price_desc`)
+      .expect(200);
+    const descIds = sortDescRes.body.data.map((p: { id: string }) => p.id);
+    expect(descIds.indexOf(visibleHigh.id)).toBeLessThan(descIds.indexOf(visibleLow.id));
+    expect(descIds.indexOf(visibleLow.id)).toBeLessThan(descIds.indexOf(hiddenCheap.id));
+    const hiddenItemInDesc = sortDescRes.body.data.find((p: { id: string }) => p.id === hiddenCheap.id);
+    expect(hiddenItemInDesc.price).toBeNull();
+  });
+
   it('respects priceVisibility: hides price when false and shows price when true', async () => {
     const brand = await createTestBrand();
     const category = await createTestCategory();
@@ -579,6 +635,38 @@ describe('Public Products API', () => {
     // First slug still resolves exclusively to product 1
     const byFirstSlugAgain = await api().get('/api/v1/public/products/high-speed-motor').expect(200);
     expect(byFirstSlugAgain.body.data.id).toBe(product1.id);
+  });
+
+  it('correctly generates and resolves product slugs with punctuation groups such as "AC/DC Motor" and "Model 2.5kW"', async () => {
+    const brand = await createTestBrand({ name: 'Danfoss Industrial', slug: 'danfoss-industrial' });
+    const category = await createTestCategory({ name: 'Motors & Drives', slug: 'motors-drives' });
+
+    const pAcDc = await createTestProduct({
+      name: 'AC/DC Motor',
+      sku: 'ACDC-01',
+      brandId: brand.id,
+      categoryId: category.id,
+      status: 'PUBLISHED',
+    });
+
+    const pModel = await createTestProduct({
+      name: 'Model 2.5kW',
+      sku: 'MOD-25KW',
+      brandId: brand.id,
+      categoryId: category.id,
+      status: 'PUBLISHED',
+    });
+
+    expect(pAcDc.slug).toBe('ac-dc-motor');
+    expect(pModel.slug).toBe('model-2-5kw');
+
+    const acDcLookup = await api().get('/api/v1/public/products/ac-dc-motor').expect(200);
+    expect(acDcLookup.body.data.id).toBe(pAcDc.id);
+    expect(acDcLookup.body.data.slug).toBe('ac-dc-motor');
+
+    const modelLookup = await api().get('/api/v1/public/products/model-2-5kw').expect(200);
+    expect(modelLookup.body.data.id).toBe(pModel.id);
+    expect(modelLookup.body.data.slug).toBe('model-2-5kw');
   });
 
   it('updates public resolution when a product is renamed: old slug 404s, new slug resolves', async () => {

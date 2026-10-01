@@ -41,15 +41,21 @@ registerMediaReferenceCheckers([
   { name: 'Category', checker: (url) => categoriesService.isMediaUrlReferenced(url) },
 ]);
 
+const CATALOG_BASE_PATHS = new Set(['/brands', '/categories', '/products']);
+
 /** Builds the /api/v1 router from the module list. */
 export function createApiRouter(): Router {
   const router = Router();
   const publicRouter = Router();
 
-  publicRouter.use(rateLimiters.publicCatalog);
-
   for (const module of modules) {
-    if (module.publicRouter) publicRouter.use(module.basePath, module.publicRouter);
+    if (module.publicRouter) {
+      if (CATALOG_BASE_PATHS.has(module.basePath)) {
+        publicRouter.use(module.basePath, rateLimiters.publicCatalog, module.publicRouter);
+      } else {
+        publicRouter.use(module.basePath, module.publicRouter);
+      }
+    }
     if (module.router) router.use(module.basePath, module.router);
   }
 

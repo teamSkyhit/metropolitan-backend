@@ -199,10 +199,20 @@ export const productsRepository = {
         orderBy = [{ name: 'desc' }, { id: 'asc' }];
         break;
       case 'price_asc':
-        orderBy = [{ price: 'asc' }, { id: 'asc' }];
+        orderBy = [
+          { priceVisibility: 'desc' },
+          { price: { sort: 'asc', nulls: 'last' } },
+          { createdAt: 'desc' },
+          { id: 'asc' },
+        ];
         break;
       case 'price_desc':
-        orderBy = [{ price: 'desc' }, { id: 'asc' }];
+        orderBy = [
+          { priceVisibility: 'desc' },
+          { price: { sort: 'desc', nulls: 'last' } },
+          { createdAt: 'desc' },
+          { id: 'asc' },
+        ];
         break;
       case 'latest':
       default:

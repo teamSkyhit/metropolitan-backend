@@ -8,8 +8,25 @@ describe('Product Slug Generation & Uniqueness Resolution (Unit)', () => {
       expect(generateSlug('Centrifugal Pump #400 (Heavy-Duty)')).toBe('centrifugal-pump-400-heavy-duty');
     });
 
+    it('replaces slashes with hyphens: "AC/DC Motor" -> "ac-dc-motor"', () => {
+      expect(generateSlug('AC/DC Motor')).toBe('ac-dc-motor');
+    });
+
+    it('replaces periods/decimal points with hyphens: "Model 2.5kW" -> "model-2-5kw"', () => {
+      expect(generateSlug('Model 2.5kW')).toBe('model-2-5kw');
+    });
+
+    it('collapses repeated punctuation and mixed special characters into single hyphens', () => {
+      expect(generateSlug('Heavy...---Duty///***Motor###2026')).toBe('heavy-duty-motor-2026');
+    });
+
+    it('strips leading and trailing punctuation and hyphens', () => {
+      expect(generateSlug('...---###Industrial Motor 500---...')).toBe('industrial-motor-500');
+    });
+
     it('returns empty string for inputs with only non-alphanumeric special characters', () => {
       expect(generateSlug('!@#$%^&*()_+')).toBe('');
+      expect(generateSlug('   ---...///   ')).toBe('');
     });
   });
 
