@@ -59,14 +59,31 @@ npm run dev             # http://localhost:5000
 
 ## Modules
 
-| Module    | CRM endpoints (`/api/v1`)                                 | Public endpoints (`/api/v1/public`) |
-| --------- | --------------------------------------------------------- | ----------------------------------- |
-| health    | `GET /health`, `GET /health/ready`                        | n/a                                 |
-| auth      | login, refresh, logout, logout-all, me, change-password   | n/a                                 |
-| users     | CRUD for Sales Managers, lookup                           | n/a                                 |
-| enquiries | list, detail, notes, status, assignee, follow-ups, delete | `POST /enquiries`                   |
+| Module    | CRM endpoints (`/api/v1`)                                 | Public endpoints (`/api/v1/public`)  |
+| --------- | --------------------------------------------------------- | ------------------------------------ |
+| health    | `GET /health`, `GET /health/ready`                        | n/a                                  |
+| auth      | login, refresh, logout, logout-all, me, change-password   | n/a                                  |
+| users     | CRUD for Sales Managers, lookup                           | n/a                                  |
+| enquiries | list, detail, notes, status, assignee, follow-ups, delete | `POST /enquiries`                    |
+| contacts  | list, detail, status, delete                              | `POST /contacts` (alias: `/contact`) |
 
 Full request/response contracts: Swagger UI at `/api/docs`.
+
+### Website integration (public contact form)
+
+1. Render the captcha widget using action name `contact_submit` (reCAPTCHA v3 or Cloudflare Turnstile).
+2. `POST /api/v1/public/contacts` (or alias `POST /api/v1/public/contact`) with the token in the `X-Captcha-Token` header.
+3. Protected by `rateLimiters.publicForm` (30 req / 15 min per IP) and CORS origins in `PUBLIC_CORS_ORIGINS`.
+4. Stored as `ContactSubmission` with audit actor tracking and soft-delete support. Email / webhook notification dispatch is deferred to BE-3.4 (Notification Module).
+
+### Contact submission workflow & permissions
+
+- Workflow: `NEW → READ → ARCHIVED` (or direct `NEW → ARCHIVED`). `ARCHIVED` is terminal; invalid transitions return HTTP 409 (`CONTACT_INVALID_STATUS_TRANSITION`).
+- Permissions:
+  - `GET /api/v1/contacts`: requires `contacts:read` (`SALES_MANAGER`, `SUPER_ADMIN`)
+  - `GET /api/v1/contacts/:id`: requires `contacts:read` (`SALES_MANAGER`, `SUPER_ADMIN`)
+  - `PATCH /api/v1/contacts/:id/status`: requires `contacts:update` (`SALES_MANAGER`, `SUPER_ADMIN`)
+  - `DELETE /api/v1/contacts/:id`: requires `contacts:delete` (`SUPER_ADMIN`)
 
 ### Website integration (public enquiry form)
 

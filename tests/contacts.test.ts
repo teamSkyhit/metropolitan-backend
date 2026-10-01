@@ -49,6 +49,24 @@ describe('POST /public/contacts', () => {
     expect(stored.pageUrl).toBe('https://example.com/contact-us');
     expect(stored.status).toBe('NEW');
     expect(stored.deletedAt).toBeNull();
+    expect(stored.createdById).toBeNull();
+    expect(stored.updatedById).toBeNull();
+  });
+
+  it('safely caps sourceIp to 64 characters before storage', async () => {
+    const longIp =
+      '2001:0db8:85a3:0000:0000:8a2e:0370:7334, 192.168.1.1, 10.0.0.1, 172.16.0.1, extra-long-forwarded-for-data';
+    const res = await api()
+      .post('/api/v1/public/contacts')
+      .set('x-forwarded-for', longIp)
+      .send(validContact)
+      .expect(201);
+
+    const stored = await prisma.contactSubmission.findUniqueOrThrow({
+      where: { id: res.body.data.id },
+    });
+    expect(stored.sourceIp).toBeDefined();
+    expect(stored.sourceIp!.length).toBeLessThanOrEqual(64);
   });
 
   it('also supports the singular endpoint alias POST /public/contact', async () => {
@@ -310,10 +328,11 @@ describe('CRM Contacts Management (Authenticated)', () => {
     await api().get('/api/v1/contacts/00000000-0000-4000-8000-000000000000').set(sales.auth).expect(404);
   });
 
-  it('updates contact submission status via PATCH /contacts/:id/status', async () => {
+  it('updates contact submission status via PATCH /contacts/:id/status and captures audit actor', async () => {
     const created = await submit().expect(201);
     const id = created.body.data.id;
 
+    // valid NEW -> READ
     const updateRes = await api()
       .patch(`/api/v1/contacts/${id}/status`)
       .set(sales.auth)
@@ -321,24 +340,142 @@ describe('CRM Contacts Management (Authenticated)', () => {
       .expect(200);
 
     expect(updateRes.body.data.status).toBe('READ');
+    expect(updateRes.body.data.updatedById).toBe(sales.user.id);
 
+    const inDb1 = await prisma.contactSubmission.findUniqueOrThrow({ where: { id } });
+    expect(inDb1.status).toBe('READ');
+    expect(inDb1.updatedById).toBe(sales.user.id);
+
+    // valid READ -> ARCHIVED
     const archiveRes = await api()
+      .patch(`/api/v1/contacts/${id}/status`)
+      .set(admin.auth)
+      .send({ status: 'ARCHIVED' })
+      .expect(200);
+
+    expect(archiveRes.body.data.status).toBe('ARCHIVED');
+    expect(archiveRes.body.data.updatedById).toBe(admin.user.id);
+
+    const inDb2 = await prisma.contactSubmission.findUniqueOrThrow({ where: { id } });
+    expect(inDb2.status).toBe('ARCHIVED');
+    expect(inDb2.updatedById).toBe(admin.user.id);
+  });
+
+  it('allows direct transition from NEW to ARCHIVED', async () => {
+    const created = await submit().expect(201);
+    const id = created.body.data.id;
+
+    const res = await api()
       .patch(`/api/v1/contacts/${id}/status`)
       .set(sales.auth)
       .send({ status: 'ARCHIVED' })
       .expect(200);
 
-    expect(archiveRes.body.data.status).toBe('ARCHIVED');
+    expect(res.body.data.status).toBe('ARCHIVED');
   });
 
-  it('soft deletes contact submission (Super Admin only)', async () => {
+  it('rejects invalid status transitions with 409 conflict', async () => {
     const created = await submit().expect(201);
     const id = created.body.data.id;
 
-    // Sales Manager cannot delete
+    // NEW -> NEW is invalid
+    const sameRes = await api()
+      .patch(`/api/v1/contacts/${id}/status`)
+      .set(sales.auth)
+      .send({ status: 'NEW' })
+      .expect(409);
+
+    expect(sameRes.body.error.code).toBe('CONTACT_INVALID_STATUS_TRANSITION');
+
+    // Move to READ
+    await api().patch(`/api/v1/contacts/${id}/status`).set(sales.auth).send({ status: 'READ' }).expect(200);
+
+    // READ -> NEW is invalid backward transition
+    const readToNew = await api()
+      .patch(`/api/v1/contacts/${id}/status`)
+      .set(sales.auth)
+      .send({ status: 'NEW' })
+      .expect(409);
+
+    expect(readToNew.body.error.code).toBe('CONTACT_INVALID_STATUS_TRANSITION');
+
+    // Move to ARCHIVED
+    await api()
+      .patch(`/api/v1/contacts/${id}/status`)
+      .set(sales.auth)
+      .send({ status: 'ARCHIVED' })
+      .expect(200);
+
+    // ARCHIVED -> READ is invalid
+    const archToRead = await api()
+      .patch(`/api/v1/contacts/${id}/status`)
+      .set(sales.auth)
+      .send({ status: 'READ' })
+      .expect(409);
+
+    expect(archToRead.body.error.code).toBe('CONTACT_INVALID_STATUS_TRANSITION');
+
+    // ARCHIVED -> NEW is invalid
+    const archToNew = await api()
+      .patch(`/api/v1/contacts/${id}/status`)
+      .set(sales.auth)
+      .send({ status: 'NEW' })
+      .expect(409);
+
+    expect(archToNew.body.error.code).toBe('CONTACT_INVALID_STATUS_TRANSITION');
+  });
+
+  it('rejects invalid status enum value with 400 validation error', async () => {
+    const created = await submit().expect(201);
+    const id = created.body.data.id;
+
+    const res = await api()
+      .patch(`/api/v1/contacts/${id}/status`)
+      .set(sales.auth)
+      .send({ status: 'PENDING' })
+      .expect(400);
+
+    expect(res.body.error.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('returns 403 when updating status without contacts:update permission', async () => {
+    const created = await submit().expect(201);
+    const id = created.body.data.id;
+
+    const salesPermissions = permissionsFor('SALES_MANAGER') as Set<Permission>;
+    salesPermissions.delete(Permission.CONTACTS_UPDATE);
+    try {
+      const res = await api()
+        .patch(`/api/v1/contacts/${id}/status`)
+        .set(sales.auth)
+        .send({ status: 'READ' })
+        .expect(403);
+      expect(res.body.error.code).toBe('FORBIDDEN');
+    } finally {
+      salesPermissions.add(Permission.CONTACTS_UPDATE);
+    }
+  });
+
+  it('returns 404 when updating status of nonexistent contact', async () => {
+    await api()
+      .patch('/api/v1/contacts/00000000-0000-4000-8000-000000000000/status')
+      .set(sales.auth)
+      .send({ status: 'READ' })
+      .expect(404);
+  });
+
+  it('returns 404 when deleting nonexistent contact', async () => {
+    await api().delete('/api/v1/contacts/00000000-0000-4000-8000-000000000000').set(admin.auth).expect(404);
+  });
+
+  it('soft deletes contact submission and captures actor (Super Admin only)', async () => {
+    const created = await submit().expect(201);
+    const id = created.body.data.id;
+
+    // Sales Manager cannot delete (403)
     await api().delete(`/api/v1/contacts/${id}`).set(sales.auth).expect(403);
 
-    // Super Admin deletes successfully
+    // Super Admin deletes successfully (204)
     await api().delete(`/api/v1/contacts/${id}`).set(admin.auth).expect(204);
 
     // Excluded from list and detail
@@ -348,6 +485,20 @@ describe('CRM Contacts Management (Authenticated)', () => {
 
     const inDb = await prisma.contactSubmission.findUniqueOrThrow({ where: { id } });
     expect(inDb.deletedAt).not.toBeNull();
+    expect(inDb.updatedById).toBe(admin.user.id);
+  });
+
+  it('supports sorting by name with stable tie-breaker', async () => {
+    await submit({ ...validContact, name: 'Zack Smith' });
+    await submit({ ...validContact, name: 'Alice Cooper' });
+    await submit({ ...validContact, name: 'Bob Dylan' });
+
+    const res = await api().get('/api/v1/contacts?sortBy=name&sortOrder=asc').set(sales.auth).expect(200);
+
+    expect(res.body.data).toHaveLength(3);
+    expect(res.body.data[0].name).toBe('Alice Cooper');
+    expect(res.body.data[1].name).toBe('Bob Dylan');
+    expect(res.body.data[2].name).toBe('Zack Smith');
   });
 });
 

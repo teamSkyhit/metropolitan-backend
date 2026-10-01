@@ -1,6 +1,6 @@
 import type { ContactStatus, Prisma } from '@prisma/client';
 import { prisma } from '../../config/database';
-import { notDeleted } from '../../shared/database/soft-delete';
+import { notDeleted, softDeleteData, updatedBy } from '../../shared/database/soft-delete';
 import { toDateRangeFilter, toSkipTake } from '../../shared/http';
 import type { ListContactsQuery, SubmitContactBody } from './contacts.schema';
 
@@ -39,7 +39,7 @@ export const contactsRepository = {
         subject: data.subject ?? null,
         message: data.message,
         pageUrl: data.pageUrl ?? null,
-        sourceIp: sourceIp ?? null,
+        sourceIp: sourceIp?.slice(0, 64) ?? null,
       },
     });
   },
@@ -47,9 +47,10 @@ export const contactsRepository = {
   async findMany(query: ListContactsQuery): Promise<{ items: ContactSubmissionRecord[]; total: number }> {
     const where = buildWhere(query);
     const { skip, take } = toSkipTake(query);
-    const orderBy: Prisma.ContactSubmissionOrderByWithRelationInput = {
-      [query.sortBy]: query.sortOrder,
-    };
+    const orderBy: Prisma.ContactSubmissionOrderByWithRelationInput[] = [
+      { [query.sortBy]: query.sortOrder },
+      { id: 'asc' },
+    ];
 
     const [items, total] = await Promise.all([
       prisma.contactSubmission.findMany({
@@ -70,17 +71,20 @@ export const contactsRepository = {
     });
   },
 
-  updateStatus(id: string, status: ContactStatus): Promise<ContactSubmissionRecord> {
+  updateStatus(id: string, status: ContactStatus, actorId: string): Promise<ContactSubmissionRecord> {
     return prisma.contactSubmission.update({
       where: { id },
-      data: { status },
+      data: {
+        status,
+        ...updatedBy(actorId),
+      },
     });
   },
 
-  async softDelete(id: string, _actorId?: string): Promise<void> {
+  async softDelete(id: string, actorId: string): Promise<void> {
     await prisma.contactSubmission.update({
       where: { id },
-      data: { deletedAt: new Date() },
+      data: softDeleteData(actorId),
     });
   },
 };

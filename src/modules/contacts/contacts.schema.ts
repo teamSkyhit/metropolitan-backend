@@ -12,6 +12,22 @@ export { ContactStatus };
 export const contactStatusEnum = z.enum(['NEW', 'READ', 'ARCHIVED']);
 export type ContactStatusType = z.infer<typeof contactStatusEnum>;
 
+export const ContactsErrorCode = {
+  INVALID_STATUS_TRANSITION: 'CONTACT_INVALID_STATUS_TRANSITION',
+} as const;
+
+/**
+ * Minimal forward-only contact workflow:
+ * - NEW can be marked as READ or directly ARCHIVED.
+ * - READ can be moved to ARCHIVED.
+ * - ARCHIVED is terminal.
+ */
+export const CONTACT_STATUS_TRANSITIONS: Record<ContactStatusType, readonly ContactStatusType[]> = {
+  NEW: ['READ', 'ARCHIVED'],
+  READ: ['ARCHIVED'],
+  ARCHIVED: [],
+};
+
 const optionalText = (max: number) =>
   z
     .string()
@@ -115,6 +131,8 @@ export const contactDetailSchema = z
     status: contactStatusEnum,
     createdAt: z.iso.datetime(),
     updatedAt: z.iso.datetime(),
+    createdById: z.uuid().nullable().optional(),
+    updatedById: z.uuid().nullable().optional(),
   })
   .meta({ id: 'ContactDetail' });
 

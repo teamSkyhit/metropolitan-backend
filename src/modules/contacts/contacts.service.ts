@@ -1,13 +1,15 @@
 import { AppError } from '../../shared/errors';
 import { buildPaginationMeta, type Paginated } from '../../shared/http';
 import { contactsRepository, type ContactSubmissionRecord } from './contacts.repository';
-import type {
-  ContactDetailDto,
-  ContactStatusType,
-  ContactSummaryDto,
-  ListContactsQuery,
-  SubmitContactBody,
-  SubmitContactResponse,
+import {
+  CONTACT_STATUS_TRANSITIONS,
+  ContactsErrorCode,
+  type ContactDetailDto,
+  type ContactStatusType,
+  type ContactSummaryDto,
+  type ListContactsQuery,
+  type SubmitContactBody,
+  type SubmitContactResponse,
 } from './contacts.schema';
 
 export function toContactSummaryDto(record: ContactSubmissionRecord): ContactSummaryDto {
@@ -36,6 +38,8 @@ export function toContactDetailDto(record: ContactSubmissionRecord): ContactDeta
     status: record.status,
     createdAt: record.createdAt.toISOString(),
     updatedAt: record.updatedAt.toISOString(),
+    createdById: record.createdById,
+    updatedById: record.updatedById,
   };
 }
 
@@ -64,16 +68,25 @@ export const contactsService = {
     return toContactDetailDto(record);
   },
 
-  async updateStatus(id: string, status: ContactStatusType): Promise<ContactDetailDto> {
+  async updateStatus(id: string, newStatus: ContactStatusType, actorId: string): Promise<ContactDetailDto> {
     const existing = await contactsRepository.findById(id);
     if (!existing) {
       throw AppError.notFound('Contact submission');
     }
-    const updated = await contactsRepository.updateStatus(id, status);
+
+    if (!CONTACT_STATUS_TRANSITIONS[existing.status].includes(newStatus)) {
+      throw AppError.conflict(
+        `Cannot change status from ${existing.status} to ${newStatus}`,
+        ContactsErrorCode.INVALID_STATUS_TRANSITION,
+        { from: existing.status, to: newStatus, allowed: CONTACT_STATUS_TRANSITIONS[existing.status] }
+      );
+    }
+
+    const updated = await contactsRepository.updateStatus(id, newStatus, actorId);
     return toContactDetailDto(updated);
   },
 
-  async softDelete(id: string, actorId?: string): Promise<void> {
+  async softDelete(id: string, actorId: string): Promise<void> {
     const existing = await contactsRepository.findById(id);
     if (!existing) {
       throw AppError.notFound('Contact submission');

@@ -29,7 +29,10 @@ export const contactsController = {
   }),
 
   updateStatus: handle({ params: idParamsSchema, body: updateContactStatusBodySchema }, async (req, res) => {
-    sendSuccess(res, await contactsService.updateStatus(req.params.id, req.body.status));
+    sendSuccess(
+      res,
+      await contactsService.updateStatus(req.params.id, req.body.status, requireAuth(req).userId)
+    );
   }),
 
   remove: handle({ params: idParamsSchema }, async (req, res) => {

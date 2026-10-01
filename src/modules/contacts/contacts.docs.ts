@@ -74,11 +74,13 @@ export function registerContactsDocs(registry: OpenAPIRegistry): void {
     tags,
     security,
     summary: 'Update contact submission status',
-    description: 'Requires `contacts:update`. Allowed statuses: NEW, READ, ARCHIVED.',
+    description:
+      'Requires `contacts:update`. Allowed transitions: NEW -> READ, NEW -> ARCHIVED, READ -> ARCHIVED. ' +
+      'ARCHIVED is terminal. Returns 409 on invalid transition.',
     request: { params: idParamsSchema, body: json(updateContactStatusBodySchema) },
     responses: {
       200: jsonResponse('Contact detail', successBody(contactDetailSchema)),
-      ...errorResponses(400, 401, 403, 404),
+      ...errorResponses(400, 401, 403, 404, 409),
     },
   });
 
