@@ -236,6 +236,70 @@ describe('Product Creation & Validation', () => {
       .expect(400);
   });
 
+  it('creates product with 200 character name, capping generated slug at <= 120 without P2000 error', async () => {
+    const brand = await createTestBrand();
+    const category = await createTestCategory();
+
+    const prefix =
+      'Industrial Centrifugal Pump Model Extra High Performance Variable Frequency Drive Super Turbo Extra ';
+    const longName = prefix + 'A'.repeat(200 - prefix.length);
+    expect(longName.length).toBe(200);
+
+    const res1 = await api()
+      .post('/api/v1/products')
+      .set(admin.auth)
+      .send(sampleProductPayload(brand.id, category.id, { name: longName, sku: 'LONG-NAME-01' }))
+      .expect(201);
+
+    const product1 = res1.body.data;
+    expect(product1.name).toBe(longName);
+    expect(product1.slug.length).toBeLessThanOrEqual(120);
+    expect(product1.slug.length).toBe(100);
+
+    // Duplicate 200-character name should collide deterministically to -2 without exceeding 120 or Prisma P2000
+    const res2 = await api()
+      .post('/api/v1/products')
+      .set(admin.auth)
+      .send(sampleProductPayload(brand.id, category.id, { name: longName, sku: 'LONG-NAME-02' }))
+      .expect(201);
+
+    const product2 = res2.body.data;
+    expect(product2.slug).toBe(`${product1.slug}-2`);
+    expect(product2.slug.length).toBeLessThanOrEqual(120);
+
+    // Third duplicate with 200-character name receives -3
+    const res3 = await api()
+      .post('/api/v1/products')
+      .set(admin.auth)
+      .send(sampleProductPayload(brand.id, category.id, { name: longName, sku: 'LONG-NAME-03' }))
+      .expect(201);
+
+    const product3 = res3.body.data;
+    expect(product3.slug).toBe(`${product1.slug}-3`);
+    expect(product3.slug.length).toBeLessThanOrEqual(120);
+  });
+
+  it('falls back to "product" slug when name yields empty slug and handles collisions', async () => {
+    const brand = await createTestBrand();
+    const category = await createTestCategory();
+
+    const res1 = await api()
+      .post('/api/v1/products')
+      .set(admin.auth)
+      .send(sampleProductPayload(brand.id, category.id, { name: '### $$$ %%%', sku: 'SPECIAL-01' }))
+      .expect(201);
+
+    expect(res1.body.data.slug).toBe('product');
+
+    const res2 = await api()
+      .post('/api/v1/products')
+      .set(admin.auth)
+      .send(sampleProductPayload(brand.id, category.id, { name: '### $$$ %%%', sku: 'SPECIAL-02' }))
+      .expect(201);
+
+    expect(res2.body.data.slug).toBe('product-2');
+  });
+
   it('rejects missing or invalid SKU with 400', async () => {
     const brand = await createTestBrand();
     const category = await createTestCategory();
@@ -835,6 +899,118 @@ describe('Product Partial Updates (PATCH)', () => {
     expect(statusUpdateRes.body.data.status).toBe('PUBLISHED');
     expect(statusUpdateRes.body.data.hotDeal).toBe(true);
     expect(statusUpdateRes.body.data.priceVisibility).toBe(false);
+  });
+
+  it('regenerates slug when product name changes, leaves slug unchanged when name is unchanged, and handles collisions and public resolution', async () => {
+    const brand = await createTestBrand({ name: 'Danfoss Industrial', slug: 'danfoss-industrial' });
+    const category = await createTestCategory({ name: 'Pumps & Drives', slug: 'pumps-drives' });
+
+    // 1. Create a published product
+    const created = await api()
+      .post('/api/v1/products')
+      .set(admin.auth)
+      .send(
+        sampleProductPayload(brand.id, category.id, {
+          name: 'Original Flowmeter',
+          sku: 'FLOW-ORIG-01',
+          status: 'PUBLISHED',
+        })
+      )
+      .expect(201);
+
+    const prodId = created.body.data.id;
+    expect(created.body.data.slug).toBe('original-flowmeter');
+
+    // 2. Public endpoint resolves initial slug
+    const publicInitial = await api().get('/api/v1/public/products/original-flowmeter').expect(200);
+    expect(publicInitial.body.data.id).toBe(prodId);
+
+    // 3. Update without changing name keeps current slug
+    const updateNoName = await api()
+      .patch(`/api/v1/products/${prodId}`)
+      .set(admin.auth)
+      .send({ price: 888.5, description: 'Updated description without name' })
+      .expect(200);
+    expect(updateNoName.body.data.slug).toBe('original-flowmeter');
+    expect(updateNoName.body.data.price).toBe(888.5);
+
+    // 4. Update with identical name (even with whitespace padding) keeps current slug
+    const updateSameName = await api()
+      .patch(`/api/v1/products/${prodId}`)
+      .set(admin.auth)
+      .send({ name: '  Original Flowmeter  ' })
+      .expect(200);
+    expect(updateSameName.body.data.slug).toBe('original-flowmeter');
+
+    // 5. Rename product changes slug
+    const renameRes = await api()
+      .patch(`/api/v1/products/${prodId}`)
+      .set(admin.auth)
+      .send({ name: 'Renamed Ultrasonic Flowmeter' })
+      .expect(200);
+    expect(renameRes.body.data.name).toBe('Renamed Ultrasonic Flowmeter');
+    expect(renameRes.body.data.slug).toBe('renamed-ultrasonic-flowmeter');
+
+    // 6. New slug resolves via GET /api/v1/public/products/:slug
+    const publicNew = await api().get('/api/v1/public/products/renamed-ultrasonic-flowmeter').expect(200);
+    expect(publicNew.body.data.id).toBe(prodId);
+    expect(publicNew.body.data.name).toBe('Renamed Ultrasonic Flowmeter');
+
+    // 7. Old slug no longer resolves after rename (returns 404)
+    await api().get('/api/v1/public/products/original-flowmeter').expect(404);
+
+    // 8. Rename to a name whose slug already exists resolves to -2 / -3 as needed
+    const existingOther = await api()
+      .post('/api/v1/products')
+      .set(admin.auth)
+      .send(
+        sampleProductPayload(brand.id, category.id, {
+          name: 'Vortex Sensor',
+          sku: 'VORTEX-01',
+          status: 'PUBLISHED',
+        })
+      )
+      .expect(201);
+    expect(existingOther.body.data.slug).toBe('vortex-sensor');
+
+    // Rename our original product to "Vortex Sensor" -> resolves to vortex-sensor-2
+    const renameCollision = await api()
+      .patch(`/api/v1/products/${prodId}`)
+      .set(admin.auth)
+      .send({ name: 'Vortex Sensor' })
+      .expect(200);
+    expect(renameCollision.body.data.slug).toBe('vortex-sensor-2');
+
+    // Public lookup resolves collision slug
+    const publicCollision = await api().get('/api/v1/public/products/vortex-sensor-2').expect(200);
+    expect(publicCollision.body.data.id).toBe(prodId);
+
+    // Original vortex sensor still resolves to existingOther
+    const publicFirst = await api().get('/api/v1/public/products/vortex-sensor').expect(200);
+    expect(publicFirst.body.data.id).toBe(existingOther.body.data.id);
+
+    // Create a 3rd product and rename it to "Vortex Sensor" -> resolves to vortex-sensor-3
+    const thirdProduct = await api()
+      .post('/api/v1/products')
+      .set(admin.auth)
+      .send(
+        sampleProductPayload(brand.id, category.id, {
+          name: 'Third Device',
+          sku: 'THIRD-01',
+          status: 'PUBLISHED',
+        })
+      )
+      .expect(201);
+
+    const renameThird = await api()
+      .patch(`/api/v1/products/${thirdProduct.body.data.id}`)
+      .set(admin.auth)
+      .send({ name: 'Vortex Sensor' })
+      .expect(200);
+    expect(renameThird.body.data.slug).toBe('vortex-sensor-3');
+
+    const publicThird = await api().get('/api/v1/public/products/vortex-sensor-3').expect(200);
+    expect(publicThird.body.data.id).toBe(thirdProduct.body.data.id);
   });
 
   it('allows updating price to null', async () => {

@@ -74,12 +74,13 @@ export function generateSlug(name: string): string {
     .trim()
     .replace(/[^a-z0-9\s-]/g, '')
     .replace(/\s+/g, '-')
-    .replace(/-+/g, '-');
+    .replace(/-+/g, '-')
+    .replace(/^-+|-+$/g, '');
 }
 
 /** Resolves a collision-free slug using base-slug, base-slug-2, base-slug-3, ... */
 export async function resolveUniqueProductSlug(baseName: string, exceptProductId?: string): Promise<string> {
-  const baseSlug = generateSlug(baseName) || 'product';
+  const baseSlug = (generateSlug(baseName) || 'product').substring(0, 100);
   let candidate = baseSlug;
   let counter = 1;
 
@@ -249,10 +250,19 @@ export const productsService = {
       await assertValidCategory(body.categoryId);
     }
 
+    const newSlug =
+      body.name !== undefined && body.name.trim() !== existing.name
+        ? await resolveUniqueProductSlug(body.name, id)
+        : undefined;
+
     try {
       const updated = await productsRepository.update(
         id,
-        { ...body, ...(normalizedSku !== undefined && { sku: normalizedSku }) },
+        {
+          ...body,
+          ...(normalizedSku !== undefined && { sku: normalizedSku }),
+          ...(newSlug !== undefined && { slug: newSlug }),
+        },
         actorId
       );
       return toProductDto(updated);

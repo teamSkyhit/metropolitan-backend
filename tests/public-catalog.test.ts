@@ -581,6 +581,37 @@ describe('Public Products API', () => {
     expect(byFirstSlugAgain.body.data.id).toBe(product1.id);
   });
 
+  it('updates public resolution when a product is renamed: old slug 404s, new slug resolves', async () => {
+    const brand = await createTestBrand();
+    const category = await createTestCategory();
+
+    const product = await createTestProduct({
+      name: 'Initial Name Machine',
+      sku: 'INM-01',
+      brandId: brand.id,
+      categoryId: category.id,
+      status: 'PUBLISHED',
+    });
+
+    expect(product.slug).toBe('initial-name-machine');
+    await api().get('/api/v1/public/products/initial-name-machine').expect(200);
+
+    // Rename product via admin PATCH
+    await api()
+      .patch(`/api/v1/products/${product.id}`)
+      .set(admin.auth)
+      .send({ name: 'Renamed Name Machine' })
+      .expect(200);
+
+    // Old slug returns 404
+    await api().get('/api/v1/public/products/initial-name-machine').expect(404);
+
+    // New slug returns 200 with product
+    const res = await api().get('/api/v1/public/products/renamed-name-machine').expect(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.id).toBe(product.id);
+  });
+
   it('never exposes internal or CRM-only fields in public products', async () => {
     const product = await createTestProduct({
       name: 'Precision Lathe',
