@@ -67,6 +67,8 @@ const envSchema = z
     RATE_LIMIT_AUTH_MAX: z.coerce.number().int().positive().default(20),
     /** Submissions per window per IP for public website forms. */
     RATE_LIMIT_PUBLIC_MAX: z.coerce.number().int().positive().default(10),
+    /** Requests per window per IP for public website catalog read endpoints. */
+    RATE_LIMIT_PUBLIC_CATALOG_MAX: z.coerce.number().int().positive().default(300),
 
     CAPTCHA_PROVIDER: z.enum(['none', 'turnstile', 'recaptcha', 'hcaptcha']).default('none'),
     CAPTCHA_SECRET_KEY: z.string().optional(),

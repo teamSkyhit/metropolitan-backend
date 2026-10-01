@@ -36,3 +36,10 @@ productsRouter.put(
   authorize(Permission.PRODUCTS_UPDATE),
   productsController.updateSpecifications
 );
+
+// ── Public Website Endpoints (/api/v1/public/products) ───────────────────────
+
+export const productsPublicRouter = Router();
+
+productsPublicRouter.get('/', productsController.listPublic);
+productsPublicRouter.get('/:slug', productsController.getBySlugPublic);

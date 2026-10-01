@@ -3,14 +3,16 @@ import { Prisma } from '@prisma/client';
 import { AppError } from '../../shared/errors';
 import { buildPaginationMeta, type Paginated } from '../../shared/http';
 import { storageService, UPLOAD_LIMITS, validateFileSize, validateImageContent } from '../../shared/storage';
-import { productsRepository, type ProductRecord } from './products.repository';
+import { productsRepository, type ProductRecord, type PublicProductRecord } from './products.repository';
 import {
   normalizeSku,
   ProductsErrorCode,
   type CreateProductBody,
   type ListProductsQuery,
+  type ListPublicProductsQuery,
   type ProductDto,
   type ProductSpecificationItem,
+  type PublicProductDto,
   type UpdateProductBody,
 } from './products.schema';
 
@@ -22,6 +24,9 @@ function handlePrismaUniqueError(err: unknown): void {
     if (target.includes('sku')) {
       throw AppError.conflict('A product with this SKU already exists', ProductsErrorCode.SKU_TAKEN);
     }
+    if (target.includes('slug')) {
+      throw AppError.conflict('A product with this slug already exists', ProductsErrorCode.SLUG_TAKEN);
+    }
     throw AppError.conflict('A record with the same unique value already exists');
   }
 }
@@ -31,6 +36,7 @@ export function toProductDto(record: ProductRecord): ProductDto {
   return {
     id: record.id,
     name: record.name,
+    slug: record.slug,
     sku: record.sku,
     brandId: record.brandId,
     categoryId: record.categoryId,
@@ -59,6 +65,63 @@ export function toProductDto(record: ProductRecord): ProductDto {
       : undefined,
     createdAt: record.createdAt.toISOString(),
     updatedAt: record.updatedAt.toISOString(),
+  };
+}
+
+export function generateSlug(name: string): string {
+  return name
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+/** Resolves a collision-free slug using base-slug, base-slug-2, base-slug-3, ... */
+export async function resolveUniqueProductSlug(baseName: string, exceptProductId?: string): Promise<string> {
+  const baseSlug = (generateSlug(baseName) || 'product').substring(0, 100);
+  let candidate = baseSlug;
+  let counter = 1;
+
+  while (true) {
+    const existing = await productsRepository.findBySlugIncludingDeleted(candidate);
+    if (!existing || existing.id === exceptProductId) {
+      return candidate;
+    }
+    counter++;
+    candidate = `${baseSlug}-${counter}`;
+  }
+}
+
+/** Maps database record to Public Product DTO using stored Product.slug without internal audit and CRM-only fields. */
+export function toPublicProductDto(record: PublicProductRecord): PublicProductDto {
+  return {
+    id: record.id,
+    name: record.name,
+    slug: record.slug,
+    sku: record.sku,
+    description: record.description,
+    price: record.priceVisibility && record.price !== null ? record.price.toNumber() : null,
+    hotDeal: record.hotDeal,
+    imageUrl: record.imageUrl ?? null,
+    specifications: Array.isArray(record.specifications)
+      ? (record.specifications as unknown as ProductSpecificationItem[])
+      : null,
+    brand: {
+      id: record.brand.id,
+      name: record.brand.name,
+      slug: record.brand.slug,
+      description: record.brand.description,
+      logoUrl: record.brand.logoUrl,
+      bannerUrl: record.brand.bannerUrl,
+    },
+    category: {
+      id: record.category.id,
+      name: record.category.name,
+      slug: record.category.slug,
+      description: record.category.description,
+      bannerUrl: record.category.bannerUrl,
+    },
+    createdAt: record.createdAt.toISOString(),
   };
 }
 
@@ -133,10 +196,24 @@ export const productsService = {
     return { items: items.map(toProductDto), pagination: buildPaginationMeta(query, total) };
   },
 
+  async listPublic(query: ListPublicProductsQuery): Promise<Paginated<PublicProductDto>> {
+    const { items, total } = await productsRepository.findManyPublic(query);
+    return {
+      items: items.map(toPublicProductDto),
+      pagination: buildPaginationMeta(query, total),
+    };
+  },
+
   async getById(id: string): Promise<ProductDto> {
     const record = await productsRepository.findById(id);
     if (!record) throw AppError.notFound('Product');
     return toProductDto(record);
+  },
+
+  async getBySlugPublic(slug: string): Promise<PublicProductDto> {
+    const record = await productsRepository.findByIdOrSkuPublic(slug);
+    if (!record) throw AppError.notFound('Product');
+    return toPublicProductDto(record);
   },
 
   async create(body: CreateProductBody, actorId: string): Promise<ProductDto> {
@@ -144,9 +221,10 @@ export const productsService = {
     await assertValidCategory(body.categoryId);
     const normalizedSku = normalizeSku(body.sku);
     await assertSkuAvailable(normalizedSku);
+    const slug = await resolveUniqueProductSlug(body.name);
 
     try {
-      const record = await productsRepository.create({ ...body, sku: normalizedSku }, actorId);
+      const record = await productsRepository.create({ ...body, sku: normalizedSku, slug }, actorId);
       return toProductDto(record);
     } catch (err) {
       handlePrismaUniqueError(err);
@@ -170,10 +248,19 @@ export const productsService = {
       await assertValidCategory(body.categoryId);
     }
 
+    const newSlug =
+      body.name !== undefined && body.name.trim() !== existing.name
+        ? await resolveUniqueProductSlug(body.name, id)
+        : undefined;
+
     try {
       const updated = await productsRepository.update(
         id,
-        { ...body, ...(normalizedSku !== undefined && { sku: normalizedSku }) },
+        {
+          ...body,
+          ...(normalizedSku !== undefined && { sku: normalizedSku }),
+          ...(newSlug !== undefined && { slug: newSlug }),
+        },
         actorId
       );
       return toProductDto(updated);

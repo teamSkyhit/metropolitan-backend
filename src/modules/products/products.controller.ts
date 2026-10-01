@@ -10,6 +10,8 @@ import { requireAuth } from '../../shared/security/auth-context';
 import {
   createProductBodySchema,
   listProductsQuerySchema,
+  listPublicProductsQuerySchema,
+  publicProductSlugParamsSchema,
   updateProductBodySchema,
   updateProductSpecificationsBodySchema,
 } from './products.schema';
@@ -20,6 +22,15 @@ export const productsController = {
   list: handle({ query: listProductsQuerySchema }, async (req, res) => {
     const { items, pagination } = await productsService.list(req.query);
     sendPaginated(res, items, pagination);
+  }),
+
+  listPublic: handle({ query: listPublicProductsQuerySchema }, async (req, res) => {
+    const { items, pagination } = await productsService.listPublic(req.query);
+    sendPaginated(res, items, pagination);
+  }),
+
+  getBySlugPublic: handle({ params: publicProductSlugParamsSchema }, async (req, res) => {
+    sendSuccess(res, await productsService.getBySlugPublic(req.params.slug));
   }),
 
   getById: handle({ params: idParamsSchema }, async (req, res) => {
