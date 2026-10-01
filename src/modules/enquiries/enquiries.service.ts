@@ -2,10 +2,13 @@ import { AppError } from '../../shared/errors';
 import { buildPaginationMeta, type Paginated } from '../../shared/http';
 import { usersService } from '../users';
 import {
+  enquiriesDashboardQueryService,
+  type EnquiriesDashboardRecentItem,
+} from './enquiries-dashboard-query.service';
+import {
   enquiriesRepository,
   type EnquiryDetailRecord,
   type EnquirySummaryRecord,
-  type RecentEnquiryRecord,
   type StatusUpdate,
 } from './enquiries.repository';
 import {
@@ -57,14 +60,15 @@ function toSummary(record: EnquirySummaryRecord): EnquirySummaryDto {
   };
 }
 
-function toRecentDto(record: RecentEnquiryRecord): DashboardRecentEnquiryDto {
+function toRecentDto(record: EnquiriesDashboardRecentItem): DashboardRecentEnquiryDto {
   return {
     id: record.id,
     name: record.name,
     company: record.company,
     status: record.status,
     assignedTo: record.assignedTo,
-    createdAt: record.createdAt.toISOString(),
+    itemCount: record.itemCount,
+    createdAt: record.createdAt,
   };
 }
 
@@ -203,18 +207,27 @@ export const enquiriesService = {
   },
 
   async getDashboard(recentLimit = 10): Promise<EnquiryDashboardDto> {
-    const [counts, recentRecords] = await Promise.all([
-      enquiriesRepository.getDashboardCounts(),
-      enquiriesRepository.findRecent(recentLimit),
+    const [summary, recentRecords] = await Promise.all([
+      enquiriesDashboardQueryService.getSummary({}),
+      enquiriesDashboardQueryService.getRecent(recentLimit),
     ]);
     return {
-      counts,
+      counts: {
+        total: summary.totalEnquiries,
+        new: summary.new,
+        assigned: summary.assigned,
+        contacted: summary.contacted,
+        quotationSent: summary.quotationSent,
+        negotiation: summary.negotiation,
+        closedWon: summary.closedWon,
+        closedLost: summary.closedLost,
+      },
       recentEnquiries: recentRecords.map(toRecentDto),
     };
   },
 
   async getRecent(limit = 10): Promise<DashboardRecentEnquiryDto[]> {
-    const records = await enquiriesRepository.findRecent(limit);
+    const records = await enquiriesDashboardQueryService.getRecent(limit);
     return records.map(toRecentDto);
   },
 };

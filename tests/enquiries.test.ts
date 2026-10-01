@@ -201,6 +201,7 @@ describe('GET /enquiries/dashboard', () => {
       company: 'Gamma Inc',
       status: 'QUOTATION_SENT',
       assignedTo: null,
+      itemCount: expect.any(Number),
       createdAt: expect.any(String),
     });
     expect(res.body.data.recentEnquiries[1]).toEqual({
@@ -209,6 +210,7 @@ describe('GET /enquiries/dashboard', () => {
       company: 'Beta Ltd',
       status: 'ASSIGNED',
       assignedTo: { id: sales.user.id, name: 'Sales One' },
+      itemCount: expect.any(Number),
       createdAt: expect.any(String),
     });
     expect(res.body.data.recentEnquiries[2]).toEqual({
@@ -217,6 +219,7 @@ describe('GET /enquiries/dashboard', () => {
       company: 'Alpha Corp',
       status: 'NEW',
       assignedTo: null,
+      itemCount: expect.any(Number),
       createdAt: expect.any(String),
     });
   });
@@ -277,6 +280,7 @@ describe('GET /enquiries/recent', () => {
         company: 'Metropolitan Corp',
         status: 'NEW',
         assignedTo: null,
+        itemCount: expect.any(Number),
         createdAt: expect.any(String),
       },
     ]);

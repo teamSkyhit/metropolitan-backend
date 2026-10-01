@@ -6,6 +6,7 @@ import { enquiriesModule } from '../modules/enquiries';
 import { healthModule } from '../modules/health';
 import { usersModule, usersService } from '../modules/users';
 import { categoriesModule, categoriesService } from '../modules/categories';
+import { dashboardModule } from '../modules/dashboard';
 import { mediaModule, registerMediaReferenceCheckers } from '../modules/media';
 import { productsModule, productsService, registerProductAssignValidation } from '../modules/products';
 import type { AppModule } from '../shared/module';
@@ -23,6 +24,7 @@ export const modules: readonly AppModule[] = [
   categoriesModule,
   productsModule,
   mediaModule,
+  dashboardModule,
   // @generator:modules
 ];
 

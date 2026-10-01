@@ -12,6 +12,12 @@ export const enquiriesModule: AppModule = {
 
 export { enquiriesService } from './enquiries.service';
 export {
+  enquiriesDashboardQueryService,
+  type EnquiriesDashboardDateRange,
+  type EnquiriesDashboardRecentItem,
+  type EnquiriesDashboardSummary,
+} from './enquiries-dashboard-query.service';
+export {
   EnquiriesErrorCode,
   EnquiryStatus,
   enquiryDashboardSchema,

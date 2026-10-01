@@ -181,6 +181,7 @@ export const dashboardRecentEnquirySchema = z
     company: z.string().nullable(),
     status: z.enum(EnquiryStatus),
     assignedTo: personSchema.nullable(),
+    itemCount: z.number().int().min(0),
     createdAt: z.iso.datetime(),
   })
   .meta({ id: 'DashboardRecentEnquiry' });
@@ -206,7 +207,7 @@ export const enquiryDashboardSchema = z
   .meta({ id: 'EnquiryDashboard' });
 
 export const recentEnquiriesQuerySchema = z.object({
-  limit: z.coerce.number().int().min(1).max(50).default(10).optional(),
+  limit: z.coerce.number().int().min(1).max(20).default(10).optional(),
 });
 
 export type SubmitEnquiryBody = z.infer<typeof submitEnquiryBodySchema>;

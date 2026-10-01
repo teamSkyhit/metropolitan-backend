@@ -58,9 +58,12 @@ export function registerEnquiriesDocs(registry: OpenAPIRegistry): void {
     path: '/enquiries/dashboard',
     tags,
     security,
+    deprecated: true,
     summary: 'Dashboard enquiry metrics and recent submissions',
     description:
-      'Requires `enquiries:read`. Returns status counts and recent enquiries for CRM dashboard widgets.',
+      'Deprecated legacy composite widget endpoint. Requires `dashboard:read`; use `/dashboard/summary` and ' +
+      '`/dashboard/recent-enquiries` for new clients. It uses the same Enquiries-owned analytics query service ' +
+      'but preserves the legacy composite response during migration.',
     request: { query: recentEnquiriesQuerySchema },
     responses: {
       200: jsonResponse('Dashboard summary', successBody(enquiryDashboardSchema)),
@@ -73,8 +76,11 @@ export function registerEnquiriesDocs(registry: OpenAPIRegistry): void {
     path: '/enquiries/recent',
     tags,
     security,
+    deprecated: true,
     summary: 'Recent enquiries list for dashboard table',
-    description: 'Requires `enquiries:read`. Returns practical summary fields for recent enquiries.',
+    description:
+      'Deprecated compatibility endpoint. Requires `dashboard:read`; use `/dashboard/recent-enquiries`. ' +
+      'Returns the same recent-enquiry item semantics, including `itemCount`.',
     request: { query: recentEnquiriesQuerySchema },
     responses: {
       200: jsonResponse('Recent enquiries', successBody(z.array(dashboardRecentEnquirySchema))),

@@ -33,6 +33,7 @@ export const Permission = {
   MEDIA_READ: 'media:read',
   MEDIA_CREATE: 'media:create',
   MEDIA_DELETE: 'media:delete',
+  DASHBOARD_READ: 'dashboard:read',
   // @generator:permissions (new module permissions are inserted above this line)
 } as const;
 
@@ -67,6 +68,7 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     Permission.MEDIA_READ,
     Permission.MEDIA_CREATE,
     Permission.MEDIA_DELETE,
+    Permission.DASHBOARD_READ,
   ],
 };
 
