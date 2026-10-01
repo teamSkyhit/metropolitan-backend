@@ -1,4 +1,4 @@
-import { type EnquiryStatus, type Prisma } from '@prisma/client';
+import { type EnquiryStatus, Prisma } from '@prisma/client';
 import { prisma } from '../../config/database';
 import { notDeleted, softDeleteData, updatedBy } from '../../shared/database/soft-delete';
 import { toDateRangeFilter, toSkipTake } from '../../shared/http';
@@ -26,6 +26,7 @@ const recentSelect = {
   status: true,
   assignedTo: person,
   createdAt: true,
+  _count: { select: { lineItems: true } },
 } as const;
 
 export type EnquirySummaryRecord = Prisma.EnquiryGetPayload<{ include: typeof summaryInclude }>;
@@ -172,24 +173,25 @@ export const enquiriesRepository = {
     await prisma.enquiry.update({ where: { id }, data: softDeleteData(actorId) });
   },
 
-  async getDashboardCounts(): Promise<{
-    total: number;
-    new: number;
-    assigned: number;
-    contacted: number;
-    quotationSent: number;
-    negotiation: number;
-    closedWon: number;
-    closedLost: number;
+  async getDashboardSummary(range: { from?: string; to?: string }): Promise<{
+    totalEnquiries: number;
+    unassigned: number;
+    countsByStatus: Record<EnquiryStatus, number>;
   }> {
-    const [countsByStatus, total] = await prisma.$transaction([
+    const createdAt = toDateRangeFilter(range);
+    const where: Prisma.EnquiryWhereInput = {
+      ...notDeleted,
+      ...(createdAt && { createdAt }),
+    };
+    const [countsByStatus, totalEnquiries, unassigned] = await prisma.$transaction([
       prisma.enquiry.groupBy({
         by: ['status'],
-        where: notDeleted,
+        where,
         _count: { status: true },
         orderBy: { status: 'asc' },
       }),
-      prisma.enquiry.count({ where: notDeleted }),
+      prisma.enquiry.count({ where }),
+      prisma.enquiry.count({ where: { ...where, assignedToId: null } }),
     ]);
 
     const countMap: Record<EnquiryStatus, number> = {
@@ -210,19 +212,65 @@ export const enquiriesRepository = {
       countMap[group.status] = statusCount;
     }
 
-    return {
-      total,
-      new: countMap.NEW,
-      assigned: countMap.ASSIGNED,
-      contacted: countMap.CONTACTED,
-      quotationSent: countMap.QUOTATION_SENT,
-      negotiation: countMap.NEGOTIATION,
-      closedWon: countMap.CLOSED_WON,
-      closedLost: countMap.CLOSED_LOST,
-    };
+    return { totalEnquiries, unassigned, countsByStatus: countMap };
   },
 
-  findRecent(limit = 10): Promise<RecentEnquiryRecord[]> {
+  async getDashboardTrends(
+    range: { from?: string; to?: string },
+    groupBy: 'day' | 'week' | 'month'
+  ): Promise<{ period: string; count: number }[]> {
+    const createdAt = toDateRangeFilter(range);
+    const conditions: Prisma.Sql[] = [Prisma.sql`"deleted_at" IS NULL`];
+    if (createdAt?.gte) {
+      conditions.push(Prisma.sql`"created_at" >= ${createdAt.gte}`);
+    }
+    if (createdAt?.lte) {
+      conditions.push(Prisma.sql`"created_at" <= ${createdAt.lte}`);
+    }
+    const whereSql = Prisma.sql`WHERE ${Prisma.join(conditions, ' AND ')}`;
+
+    let querySql: Prisma.Sql;
+    switch (groupBy) {
+      case 'month':
+        querySql = Prisma.sql`
+          SELECT
+            TO_CHAR(DATE_TRUNC('month', "created_at" AT TIME ZONE 'UTC'), 'YYYY-MM') AS period,
+            COUNT(*)::int AS count
+          FROM "enquiries"
+          ${whereSql}
+          GROUP BY DATE_TRUNC('month', "created_at" AT TIME ZONE 'UTC')
+          ORDER BY DATE_TRUNC('month', "created_at" AT TIME ZONE 'UTC') ASC
+        `;
+        break;
+      case 'week':
+        querySql = Prisma.sql`
+          SELECT
+            TO_CHAR(DATE_TRUNC('week', "created_at" AT TIME ZONE 'UTC'), 'YYYY-MM-DD') AS period,
+            COUNT(*)::int AS count
+          FROM "enquiries"
+          ${whereSql}
+          GROUP BY DATE_TRUNC('week', "created_at" AT TIME ZONE 'UTC')
+          ORDER BY DATE_TRUNC('week', "created_at" AT TIME ZONE 'UTC') ASC
+        `;
+        break;
+      case 'day':
+      default:
+        querySql = Prisma.sql`
+          SELECT
+            TO_CHAR(DATE_TRUNC('day', "created_at" AT TIME ZONE 'UTC'), 'YYYY-MM-DD') AS period,
+            COUNT(*)::int AS count
+          FROM "enquiries"
+          ${whereSql}
+          GROUP BY DATE_TRUNC('day', "created_at" AT TIME ZONE 'UTC')
+          ORDER BY DATE_TRUNC('day', "created_at" AT TIME ZONE 'UTC') ASC
+        `;
+        break;
+    }
+
+    return prisma.$queryRaw<{ period: string; count: number }[]>(querySql);
+  },
+
+  findDashboardRecent(limit = 10): Promise<RecentEnquiryRecord[]> {
     return prisma.enquiry.findMany({
       where: notDeleted,
       select: recentSelect,

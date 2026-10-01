@@ -12,7 +12,7 @@ export const dashboardModule: AppModule = {
 export { dashboardService } from './dashboard.service';
 export {
   dashboardRecentEnquiriesSchema,
-  dashboardRecentEnquirySchema,
+  dashboardAnalyticsRecentEnquirySchema,
   dashboardSummaryQuerySchema,
   dashboardSummarySchema,
   dashboardTrendsQuerySchema,
@@ -21,6 +21,7 @@ export {
   statusPipelineItemSchema,
   trendGroupByEnum,
   trendItemSchema,
+  MAX_TRENDS_RANGE_DAYS,
   type DashboardRecentEnquiryDto,
   type DashboardSummaryDto,
   type DashboardSummaryQuery,

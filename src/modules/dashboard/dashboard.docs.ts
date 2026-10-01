@@ -25,7 +25,8 @@ export function registerDashboardDocs(registry: OpenAPIRegistry): void {
     security,
     summary: 'CRM dashboard enquiry summary and pipeline metrics',
     description:
-      'Requires `dashboard:read`. Returns operational summary counts and chart-ready status pipeline.',
+      'Requires `dashboard:read`. Returns operational summary counts and chart-ready status pipeline. ' +
+      '`unassigned` means `assignedToId IS NULL`. With no date range, the summary is all-time.',
     request: { query: dashboardSummaryQuerySchema },
     responses: {
       200: jsonResponse('Dashboard summary', successBody(dashboardSummarySchema)),
@@ -39,7 +40,10 @@ export function registerDashboardDocs(registry: OpenAPIRegistry): void {
     tags,
     security,
     summary: 'CRM dashboard enquiry trends over time',
-    description: 'Requires `dashboard:read`. Returns enquiry volume aggregated by day, week, or month.',
+    description:
+      'Requires `dashboard:read`. Both UTC dates are required and the inclusive range is capped at 366 days. ' +
+      'Returns a sparse result set aggregated by day, week, or month: periods with zero enquiries are omitted. ' +
+      'Clients must zero-fill missing periods when a continuous chart is required.',
     request: { query: dashboardTrendsQuerySchema },
     responses: {
       200: jsonResponse('Dashboard trends', successBody(dashboardTrendsSchema)),

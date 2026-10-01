@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { api } from './helpers/app';
 import { signInAs, type Session } from './helpers/auth';
 import { prisma, resetDatabase } from './helpers/db';
+import { Permission, permissionsFor } from '../src/shared/security/permissions';
 
 let admin: Session;
 let sales: Session;
@@ -74,14 +75,34 @@ describe('Dashboard Analytics Authentication & RBAC', () => {
 
   it('allows access for SUPER_ADMIN', async () => {
     await api().get('/api/v1/dashboard/summary').set(admin.auth).expect(200);
-    await api().get('/api/v1/dashboard/trends').set(admin.auth).expect(200);
+    await api().get('/api/v1/dashboard/trends?from=2026-01-01&to=2026-01-31').set(admin.auth).expect(200);
     await api().get('/api/v1/dashboard/recent-enquiries').set(admin.auth).expect(200);
   });
 
   it('allows access for SALES_MANAGER', async () => {
     await api().get('/api/v1/dashboard/summary').set(sales.auth).expect(200);
-    await api().get('/api/v1/dashboard/trends').set(sales.auth).expect(200);
+    await api().get('/api/v1/dashboard/trends?from=2026-01-01&to=2026-01-31').set(sales.auth).expect(200);
     await api().get('/api/v1/dashboard/recent-enquiries').set(sales.auth).expect(200);
+  });
+
+  it('returns 403 when an authenticated user lacks dashboard:read', async () => {
+    const salesPermissions = permissionsFor('SALES_MANAGER') as Set<Permission>;
+    salesPermissions.delete(Permission.DASHBOARD_READ);
+    try {
+      const summaryRes = await api().get('/api/v1/dashboard/summary').set(sales.auth).expect(403);
+      expect(summaryRes.body.error.code).toBe('FORBIDDEN');
+
+      const trendsRes = await api()
+        .get('/api/v1/dashboard/trends?from=2026-01-01&to=2026-01-31')
+        .set(sales.auth)
+        .expect(403);
+      expect(trendsRes.body.error.code).toBe('FORBIDDEN');
+
+      const recentRes = await api().get('/api/v1/dashboard/recent-enquiries').set(sales.auth).expect(403);
+      expect(recentRes.body.error.code).toBe('FORBIDDEN');
+    } finally {
+      salesPermissions.add(Permission.DASHBOARD_READ);
+    }
   });
 
   it('rejects deactivated or deleted users', async () => {
@@ -286,11 +307,24 @@ describe('GET /api/v1/dashboard/trends', () => {
   });
 
   it('rejects invalid groupBy and malformed parameters', async () => {
-    await api().get('/api/v1/dashboard/trends?groupBy=year').set(sales.auth).expect(400);
+    await api()
+      .get('/api/v1/dashboard/trends?from=2026-09-01&to=2026-09-30&groupBy=year')
+      .set(sales.auth)
+      .expect(400);
 
-    await api().get('/api/v1/dashboard/trends?groupBy=hourly').set(sales.auth).expect(400);
+    await api()
+      .get('/api/v1/dashboard/trends?from=2026-09-01&to=2026-09-30&groupBy=hourly')
+      .set(sales.auth)
+      .expect(400);
 
     await api().get('/api/v1/dashboard/trends?from=2026-09-30&to=2026-09-01').set(sales.auth).expect(400);
+  });
+
+  it('requires a bounded range and rejects spans over 366 days', async () => {
+    await api().get('/api/v1/dashboard/trends').set(sales.auth).expect(400);
+    await api().get('/api/v1/dashboard/trends?from=2026-09-01').set(sales.auth).expect(400);
+    await api().get('/api/v1/dashboard/trends?from=2025-01-01&to=2026-01-03').set(sales.auth).expect(400);
+    await api().get('/api/v1/dashboard/trends?from=2025-01-01&to=2026-01-02').set(sales.auth).expect(200);
   });
 });
 
@@ -394,5 +428,18 @@ describe('GET /api/v1/dashboard/recent-enquiries', () => {
     expect(item).not.toHaveProperty('password');
     expect(item).not.toHaveProperty('passwordHash');
     expect(item).not.toHaveProperty('refreshToken');
+  });
+});
+
+describe('Dashboard Analytics OpenAPI', () => {
+  it('uses unique component IDs and marks legacy CRM surfaces deprecated', async () => {
+    const res = await api().get('/api/docs.json').expect(200);
+    const schemas = res.body.components.schemas;
+
+    expect(schemas).toHaveProperty('DashboardAnalyticsRecentEnquiry');
+    expect(schemas).toHaveProperty('DashboardRecentEnquiry');
+    expect(res.body.paths['/enquiries/dashboard'].get.deprecated).toBe(true);
+    expect(res.body.paths['/enquiries/recent'].get.deprecated).toBe(true);
+    expect(res.body.paths['/dashboard/trends'].get.description).toContain('sparse result set');
   });
 });
