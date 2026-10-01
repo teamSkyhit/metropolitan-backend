@@ -6,6 +6,7 @@ import { enquiriesModule } from '../modules/enquiries';
 import { healthModule } from '../modules/health';
 import { usersModule, usersService } from '../modules/users';
 import { categoriesModule, categoriesService } from '../modules/categories';
+import { contactsModule } from '../modules/contacts';
 import { dashboardModule } from '../modules/dashboard';
 import { mediaModule, registerMediaReferenceCheckers } from '../modules/media';
 import { productsModule, productsService, registerProductAssignValidation } from '../modules/products';
@@ -25,6 +26,7 @@ export const modules: readonly AppModule[] = [
   productsModule,
   mediaModule,
   dashboardModule,
+  contactsModule,
   // @generator:modules
 ];
 
@@ -56,6 +58,9 @@ export function createApiRouter(): Router {
         publicRouter.use(module.basePath, rateLimiters.publicCatalog, module.publicRouter);
       } else {
         publicRouter.use(module.basePath, module.publicRouter);
+        if (module.basePath === '/contacts') {
+          publicRouter.use('/contact', module.publicRouter);
+        }
       }
     }
     if (module.router) router.use(module.basePath, module.router);
