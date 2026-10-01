@@ -287,3 +287,32 @@ model Media {
   @@index([publicUrl])
   @@map("media")
 }
+
+enum ContactStatus {
+  NEW
+  READ
+  ARCHIVED
+}
+
+/// A contact form submission from the public website.
+model ContactSubmission {
+  id        String        @id @default(uuid()) @db.Uuid
+  name      String        @db.VarChar(100)
+  email     String        @db.VarChar(254)
+  mobile    String?       @db.VarChar(20)
+  company   String?       @db.VarChar(150)
+  subject   String?       @db.VarChar(200)
+  message   String        @db.VarChar(2000)
+  pageUrl   String?       @map("page_url") @db.VarChar(500)
+  status    ContactStatus @default(NEW)
+  sourceIp  String?       @map("source_ip") @db.VarChar(64)
+  createdAt DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime?     @map("deleted_at") @db.Timestamptz(3)
+
+  @@index([status])
+  @@index([deletedAt, createdAt])
+  @@index([email])
+  @@map("contact_submissions")
+}
+
