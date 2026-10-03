@@ -15,12 +15,13 @@ export function createApp(): Express {
   app.use(requestLogger);
   if (config.apiDocsEnabled) app.use('/api', createDocsRouter(modules));
 
-  app.use(helmet());
+  app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
   app.use(corsMiddleware);
   if (config.STORAGE_DRIVER === 'local') {
     app.use(config.STORAGE_BASE_URL, express.static(path.resolve(config.STORAGE_LOCAL_DIR)));
   }
   app.use(express.json({ limit: config.BODY_LIMIT }));
+  app.use(express.urlencoded({ extended: false, limit: config.BODY_LIMIT }));
   app.use('/api', rateLimiters.global);
 
   app.use('/api/v1', createApiRouter());

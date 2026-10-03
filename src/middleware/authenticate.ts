@@ -29,7 +29,7 @@ export interface AuthenticateOptions {
  * deletion and password changes take effect immediately.
  */
 export function authenticate(options: AuthenticateOptions = {}): RequestHandler {
-  return async (req, _res, next) => {
+  return async (req, res, next) => {
     const [scheme, token] = (req.get('Authorization') ?? '').split(' ');
     if (scheme?.toLowerCase() !== 'bearer' || !token) {
       throw AppError.unauthorized('Authentication token is required');
@@ -53,6 +53,7 @@ export function authenticate(options: AuthenticateOptions = {}): RequestHandler 
       );
     }
 
+    res.setHeader('Cache-Control', 'no-store');
     req.auth = { userId: user.id, role: user.role, permissions: permissionsFor(user.role) };
     next();
   };

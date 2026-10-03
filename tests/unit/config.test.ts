@@ -59,4 +59,15 @@ describe('loadConfig', () => {
 
     expect(config.apiDocsEnabled).toBe(false);
   });
+
+  it('rejects weak placeholder JWT secrets outside local', () => {
+    expect(() =>
+      loadConfig({
+        ...base,
+        APP_ENV: 'staging',
+        CORS_ORIGINS: 'https://crm.example.com',
+        JWT_ACCESS_SECRET: 'change-me-change-me-change-me-12345',
+      })
+    ).toThrow(/weak or default placeholder/);
+  });
 });

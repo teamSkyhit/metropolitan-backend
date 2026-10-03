@@ -106,6 +106,23 @@ const envSchema = z
 
     if (env.APP_ENV === 'local') return;
 
+    const lowerSecret = env.JWT_ACCESS_SECRET.toLowerCase();
+    const isWeakSecret =
+      lowerSecret.includes('changeme') ||
+      lowerSecret.includes('change-me') ||
+      lowerSecret.includes('default') ||
+      lowerSecret.includes('password') ||
+      lowerSecret.includes('placeholder') ||
+      lowerSecret.includes('12345678');
+
+    if (isWeakSecret) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['JWT_ACCESS_SECRET'],
+        message: 'JWT_ACCESS_SECRET must not use a weak or default placeholder secret outside local',
+      });
+    }
+
     for (const key of ['CORS_ORIGINS', 'PUBLIC_CORS_ORIGINS'] as const) {
       if (env[key].includes('*')) {
         ctx.addIssue({ code: 'custom', path: [key], message: `${key} must not contain "*" outside local` });
