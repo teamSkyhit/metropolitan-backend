@@ -48,6 +48,7 @@ model User {
   enquiryFollowUps     EnquiryFollowUp[]
   enquiryStatusChanges EnquiryStatusChange[]
   uploadedMedia        Media[]               @relation("MediaUploader")
+  notifications        Notification[]        @relation("UserNotifications")
 
   @@index([role])
   @@index([deletedAt, createdAt])
@@ -317,5 +318,29 @@ model ContactSubmission {
   @@index([email])
   @@index([name])
   @@map("contact_submissions")
+}
+
+/// In-app notification for CRM users.
+model Notification {
+  id              String    @id @default(uuid()) @db.Uuid
+  recipientUserId String    @map("recipient_user_id") @db.Uuid
+  type            String    @db.VarChar(50)
+  title           String    @db.VarChar(200)
+  message         String    @db.VarChar(2000)
+  readAt          DateTime? @map("read_at") @db.Timestamptz(3)
+  entityType      String?   @map("entity_type") @db.VarChar(50)
+  entityId        String?   @map("entity_id") @db.Uuid
+  idempotencyKey  String?   @unique @map("idempotency_key") @db.VarChar(128)
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt       DateTime? @map("deleted_at") @db.Timestamptz(3)
+  createdById     String?   @map("created_by_id") @db.Uuid
+  updatedById     String?   @map("updated_by_id") @db.Uuid
+
+  recipient User @relation("UserNotifications", fields: [recipientUserId], references: [id], onDelete: Restrict)
+
+  @@index([recipientUserId, deletedAt, createdAt])
+  @@index([recipientUserId, deletedAt, readAt, createdAt])
+  @@map("notifications")
 }
 
