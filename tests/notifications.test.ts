@@ -6,6 +6,7 @@ import {
   assertValidEmail,
   escapeHtml,
 } from '../src/modules/notifications';
+import { Permission, permissionsFor } from '../src/shared/security/permissions';
 import { api } from './helpers/app';
 import { signInAs, type Session } from './helpers/auth';
 import { prisma, resetDatabase } from './helpers/db';
@@ -20,6 +21,7 @@ beforeEach(async () => {
   userB = await signInAs('SALES_MANAGER', { name: 'User Beta', email: 'user.beta@metro.test' });
 
   testEmailProvider.clear();
+  notificationsService.clearDispatchHistory();
   notificationsService.setEmailProvider(testEmailProvider);
   notificationsService.setContactRecipientResolver({
     async resolveRecipients() {
@@ -30,6 +32,7 @@ beforeEach(async () => {
 
 afterEach(() => {
   testEmailProvider.clear();
+  notificationsService.clearDispatchHistory();
 });
 
 describe('Notifications Authentication & Endpoint Access', () => {
@@ -38,6 +41,40 @@ describe('Notifications Authentication & Endpoint Access', () => {
     await api().get('/api/v1/notifications/unread-count').expect(401);
     await api().patch('/api/v1/notifications/read-all').expect(401);
     await api().patch('/api/v1/notifications/00000000-0000-4000-8000-000000000000/read').expect(401);
+  });
+
+  it('returns 403 Forbidden when authenticated user lacks notifications:read permission', async () => {
+    const salesPermissions = permissionsFor('SALES_MANAGER') as Set<Permission>;
+    salesPermissions.delete(Permission.NOTIFICATIONS_READ);
+    try {
+      const resList = await api().get('/api/v1/notifications').set(userA.auth).expect(403);
+      expect(resList.body.error.code).toBe('FORBIDDEN');
+
+      const resCount = await api().get('/api/v1/notifications/unread-count').set(userA.auth).expect(403);
+      expect(resCount.body.error.code).toBe('FORBIDDEN');
+
+      const resReadAll = await api().patch('/api/v1/notifications/read-all').set(userA.auth).expect(403);
+      expect(resReadAll.body.error.code).toBe('FORBIDDEN');
+
+      const resRead = await api()
+        .patch('/api/v1/notifications/00000000-0000-4000-8000-000000000000/read')
+        .set(userA.auth)
+        .expect(403);
+      expect(resRead.body.error.code).toBe('FORBIDDEN');
+    } finally {
+      salesPermissions.add(Permission.NOTIFICATIONS_READ);
+    }
+  });
+
+  it('allows authorized users with notifications:read to access notification endpoints', async () => {
+    const resList = await api().get('/api/v1/notifications').set(userA.auth).expect(200);
+    expect(resList.body.success).toBe(true);
+
+    const resCount = await api().get('/api/v1/notifications/unread-count').set(userA.auth).expect(200);
+    expect(resCount.body.success).toBe(true);
+
+    const resReadAll = await api().patch('/api/v1/notifications/read-all').set(userA.auth).expect(200);
+    expect(resReadAll.body.success).toBe(true);
   });
 
   it('does not expose a public or generic notification send endpoint (returns 404)', async () => {
@@ -301,21 +338,191 @@ describe('System Audit Semantics & In-App Idempotency', () => {
     const count = await prisma.notification.count({ where: { recipientUserId: userA.user.id } });
     expect(count).toBe(1);
   });
+
+  it('deduplicates in-app notifications and prevents duplicate email sends on repeated dispatch', async () => {
+    notificationsService.setContactRecipientResolver({
+      async resolveRecipients() {
+        return {
+          inAppUserIds: [userA.user.id],
+          emails: ['alerts@metro.test'],
+        };
+      },
+    });
+
+    const event = {
+      id: '11111111-2222-4333-8444-555555555555',
+      name: 'Rohan Sharma',
+      email: 'rohan.sharma@example.test',
+      createdAt: new Date(),
+    };
+
+    // First dispatch
+    await notificationsService.handleContactSubmitted(event);
+    expect(testEmailProvider.getSent()).toHaveLength(1);
+    const countFirst = await prisma.notification.count({ where: { recipientUserId: userA.user.id } });
+    expect(countFirst).toBe(1);
+
+    // Second dispatch with identical event
+    await notificationsService.handleContactSubmitted(event);
+    const countSecond = await prisma.notification.count({ where: { recipientUserId: userA.user.id } });
+    expect(countSecond).toBe(1);
+    // Duplicate email dispatch within the runtime dispatch path is prevented
+    expect(testEmailProvider.getSent()).toHaveLength(1);
+  });
+});
+
+describe('DB-Bound Field Length Protections & Normalization', () => {
+  it('rejects invalid recipientUserId UUID', async () => {
+    await expect(
+      notificationsService.createInAppNotification({
+        recipientUserId: 'not-a-valid-uuid',
+        type: 'CONTACT_SUBMISSION',
+        title: 'Valid Title',
+        message: 'Valid Message',
+      })
+    ).rejects.toThrow(/recipientUserId/);
+  });
+
+  it('rejects oversized type exceeding 50 characters without truncating', async () => {
+    await expect(
+      notificationsService.createInAppNotification({
+        recipientUserId: userA.user.id,
+        type: 'A'.repeat(51),
+        title: 'Valid Title',
+        message: 'Valid Message',
+      })
+    ).rejects.toThrow(/type/);
+  });
+
+  it('rejects oversized entityType exceeding 50 characters without truncating', async () => {
+    await expect(
+      notificationsService.createInAppNotification({
+        recipientUserId: userA.user.id,
+        type: 'CONTACT_SUBMISSION',
+        title: 'Valid Title',
+        message: 'Valid Message',
+        entityType: 'E'.repeat(51),
+      })
+    ).rejects.toThrow(/entityType/);
+  });
+
+  it('rejects invalid entityId UUID without truncating', async () => {
+    await expect(
+      notificationsService.createInAppNotification({
+        recipientUserId: userA.user.id,
+        type: 'CONTACT_SUBMISSION',
+        title: 'Valid Title',
+        message: 'Valid Message',
+        entityId: 'not-a-uuid',
+      })
+    ).rejects.toThrow(/entityId/);
+  });
+
+  it('rejects oversized idempotencyKey exceeding 128 characters without truncating', async () => {
+    await expect(
+      notificationsService.createInAppNotification({
+        recipientUserId: userA.user.id,
+        type: 'CONTACT_SUBMISSION',
+        title: 'Valid Title',
+        message: 'Valid Message',
+        idempotencyKey: 'k'.repeat(129),
+      })
+    ).rejects.toThrow(/idempotencyKey/);
+  });
+
+  it('safely clamps title to 200 characters and message to 2000 characters before persistence', async () => {
+    const longTitle = 'Title Start: ' + 'T'.repeat(250);
+    const longMessage = 'Message Start: ' + 'M'.repeat(2500);
+
+    const { notification } = await notificationsService.createInAppNotification({
+      recipientUserId: userA.user.id,
+      type: 'CONTACT_SUBMISSION',
+      title: longTitle,
+      message: longMessage,
+    });
+
+    expect(notification.title.length).toBeLessThanOrEqual(200);
+    expect(notification.message.length).toBeLessThanOrEqual(2000);
+
+    const stored = await prisma.notification.findUniqueOrThrow({ where: { id: notification.id } });
+    expect(stored.title.length).toBeLessThanOrEqual(200);
+    expect(stored.message.length).toBeLessThanOrEqual(2000);
+  });
 });
 
 describe('Email Security, Header Injection & Provider Failure Isolation', () => {
-  it('detects and rejects CR or LF in header-controlled values', () => {
+  it('detects and rejects CR, LF, CRLF, U+2028, and U+2029 across header fields', async () => {
     expect(() => assertNoHeaderInjection('Safe subject', 'subject')).not.toThrow();
-    expect(() => assertNoHeaderInjection('Injection\r\nBcc: hacker@evil.test', 'subject')).toThrow(
-      /illegal carriage return/
-    );
-    expect(() => assertNoHeaderInjection('Header\nInjection', 'subject')).toThrow(/illegal carriage return/);
+    expect(() => assertNoHeaderInjection('Injection\rBcc: evil@test.com', 'subject')).toThrow();
+    expect(() => assertNoHeaderInjection('Injection\nBcc: evil@test.com', 'subject')).toThrow();
+    expect(() => assertNoHeaderInjection('Injection\r\nBcc: evil@test.com', 'subject')).toThrow();
+    expect(() => assertNoHeaderInjection('Injection\u2028Bcc: evil@test.com', 'subject')).toThrow();
+    expect(() => assertNoHeaderInjection('Injection\u2029Bcc: evil@test.com', 'subject')).toThrow();
+
+    // Service boundary rejects before invoking provider
+    await expect(
+      notificationsService.sendEmail({
+        to: 'recipient@metro.test',
+        subject: 'Header\rInjection',
+        text: 'Hello',
+      })
+    ).rejects.toThrow();
+
+    await expect(
+      notificationsService.sendEmail({
+        to: 'recipient@metro.test',
+        subject: 'Header\nInjection',
+        text: 'Hello',
+      })
+    ).rejects.toThrow();
+
+    await expect(
+      notificationsService.sendEmail({
+        to: 'recipient@metro.test',
+        subject: 'Header\r\nInjection',
+        text: 'Hello',
+      })
+    ).rejects.toThrow();
+
+    await expect(
+      notificationsService.sendEmail({
+        to: 'recipient@metro.test',
+        subject: 'Header\u2028Injection',
+        text: 'Hello',
+      })
+    ).rejects.toThrow();
+
+    await expect(
+      notificationsService.sendEmail({
+        to: 'recipient@metro.test',
+        subject: 'Header\u2029Injection',
+        text: 'Hello',
+      })
+    ).rejects.toThrow();
+
+    await expect(
+      notificationsService.sendEmail({
+        to: 'recipient\u2028@metro.test',
+        subject: 'Valid Subject',
+        text: 'Hello',
+      })
+    ).rejects.toThrow();
+
+    await expect(
+      notificationsService.sendEmail({
+        to: 'recipient@metro.test',
+        subject: 'Valid Subject',
+        text: 'Hello',
+        replyTo: 'reply\u2029@metro.test',
+      })
+    ).rejects.toThrow();
   });
 
   it('rejects invalid recipient email formats', () => {
     expect(() => assertValidEmail('valid.user@example.com')).not.toThrow();
     expect(() => assertValidEmail('bad-email')).toThrow(/Invalid recipient email/);
-    expect(() => assertValidEmail('user@test\r\nBcc: evil@test.com')).toThrow(/illegal carriage return/);
+    expect(() => assertValidEmail('user@test\r\nBcc: evil@test.com')).toThrow();
+    expect(() => assertValidEmail('user@test\u2028evil@test.com')).toThrow();
   });
 
   it('safely escapes HTML characters in template strings', () => {
@@ -415,6 +622,42 @@ describe('Contact Form Notification Integration', () => {
     });
     expect(contactInDb.name).toBe('Rohan Gupta');
   });
+
+  it('handles maximum-length contact name and subject without failing or missing notification (title overflow regression)', async () => {
+    notificationsService.setContactRecipientResolver({
+      async resolveRecipients() {
+        return {
+          inAppUserIds: [userA.user.id],
+          emails: ['sales@metro.test'],
+        };
+      },
+    });
+
+    const maxName = 'N'.repeat(100);
+    const maxSubject = 'S'.repeat(200);
+    const contactPayload = {
+      name: maxName,
+      email: 'overflow.test@example.test',
+      subject: maxSubject,
+      message: 'Testing contact title overflow behavior with maximum input lengths.',
+    };
+
+    // Combined title before clamp: "New Contact Inquiry: " (21) + 100 + " — " (3) + 200 = 324 chars (> 200)
+    const res = await api().post('/api/v1/public/contacts').send(contactPayload).expect(201);
+    expect(res.body.success).toBe(true);
+
+    // Verify notification was created and not silently missed
+    const notifications = await prisma.notification.findMany({
+      where: { recipientUserId: userA.user.id },
+    });
+    expect(notifications).toHaveLength(1);
+    const item = notifications[0]!;
+    expect(item.title.length).toBeLessThanOrEqual(200);
+    expect(item.title).toMatch(/^New Contact Inquiry: N+/);
+    // Ensure no malformed or dangling trailing separators
+    expect(item.title).not.toMatch(/[\s—–-]+$/);
+    expect(item.message.length).toBeLessThanOrEqual(2000);
+  });
 });
 
 describe('OpenAPI Documentation for Notifications', () => {
@@ -422,9 +665,13 @@ describe('OpenAPI Documentation for Notifications', () => {
     const res = await api().get('/api/docs.json').expect(200);
 
     expect(res.body.paths).toHaveProperty('/notifications');
+    expect(res.body.paths['/notifications'].get.responses).toHaveProperty('403');
     expect(res.body.paths).toHaveProperty('/notifications/unread-count');
+    expect(res.body.paths['/notifications/unread-count'].get.responses).toHaveProperty('403');
     expect(res.body.paths).toHaveProperty('/notifications/read-all');
+    expect(res.body.paths['/notifications/read-all'].patch.responses).toHaveProperty('403');
     expect(res.body.paths).toHaveProperty('/notifications/{id}/read');
+    expect(res.body.paths['/notifications/{id}/read'].patch.responses).toHaveProperty('403');
 
     expect(res.body.components.schemas).toHaveProperty('NotificationItem');
     expect(res.body.components.schemas).toHaveProperty('NotificationUnreadCountResponse');

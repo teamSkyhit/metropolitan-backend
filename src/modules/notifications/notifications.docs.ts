@@ -25,12 +25,12 @@ export function registerNotificationsDocs(registry: OpenAPIRegistry): void {
     security,
     summary: "List current authenticated user's notifications",
     description:
-      'Returns paginated notifications belonging to the authenticated user, ordered latest first. ' +
+      'Requires `notifications:read`. Returns paginated notifications belonging to the authenticated user, ordered latest first. ' +
       'Supports optional `unreadOnly=true` filtering.',
     request: { query: listNotificationsQuerySchema },
     responses: {
       200: jsonResponse('Notifications list', paginatedBody(notificationDtoSchema)),
-      ...errorResponses(400, 401),
+      ...errorResponses(400, 401, 403),
     },
   });
 
@@ -40,10 +40,11 @@ export function registerNotificationsDocs(registry: OpenAPIRegistry): void {
     tags,
     security,
     summary: 'Get unread notification count',
-    description: 'Returns the number of unread, non-deleted notifications belonging to the current user.',
+    description:
+      'Requires `notifications:read`. Returns the number of unread, non-deleted notifications belonging to the current user.',
     responses: {
       200: jsonResponse('Unread count', successBody(unreadCountResponseSchema)),
-      ...errorResponses(401),
+      ...errorResponses(401, 403),
     },
   });
 
@@ -54,10 +55,10 @@ export function registerNotificationsDocs(registry: OpenAPIRegistry): void {
     security,
     summary: 'Mark all unread notifications as read',
     description:
-      'Atomically marks all unread notifications belonging to the current user as read. Idempotent.',
+      'Requires `notifications:read`. Atomically marks all unread notifications belonging to the current user as read. Idempotent.',
     responses: {
       200: jsonResponse('Count of marked notifications', successBody(readAllResponseSchema)),
-      ...errorResponses(401),
+      ...errorResponses(401, 403),
     },
   });
 
@@ -68,12 +69,12 @@ export function registerNotificationsDocs(registry: OpenAPIRegistry): void {
     security,
     summary: 'Mark a notification as read',
     description:
-      'Marks a single notification as read. The notification must belong to the authenticated user. ' +
+      'Requires `notifications:read`. Marks a single notification as read. The notification must belong to the authenticated user. ' +
       'Returns 404 if the notification does not exist or belongs to another user.',
     request: { params: idParamsSchema },
     responses: {
       200: jsonResponse('Updated notification', successBody(notificationDtoSchema)),
-      ...errorResponses(400, 401, 404),
+      ...errorResponses(400, 401, 403, 404),
     },
   });
 }

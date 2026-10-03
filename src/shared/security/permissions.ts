@@ -37,6 +37,7 @@ export const Permission = {
   CONTACTS_READ: 'contacts:read',
   CONTACTS_UPDATE: 'contacts:update',
   CONTACTS_DELETE: 'contacts:delete',
+  NOTIFICATIONS_READ: 'notifications:read',
   // @generator:permissions (new module permissions are inserted above this line)
 } as const;
 
@@ -74,6 +75,7 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     Permission.DASHBOARD_READ,
     Permission.CONTACTS_READ,
     Permission.CONTACTS_UPDATE,
+    Permission.NOTIFICATIONS_READ,
   ],
 };
 

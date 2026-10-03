@@ -30,4 +30,10 @@ export type {
 } from './providers/email-provider.interface';
 export { NoopEmailProvider } from './providers/noop-email.provider';
 export { TestEmailProvider } from './providers/test-email.provider';
-export { assertNoHeaderInjection, assertValidEmail, escapeHtml } from './utils/email-sanitizer';
+export {
+  assertNoHeaderInjection,
+  assertValidEmail,
+  escapeHtml,
+  validateEmailHeaders,
+  HEADER_INJECTION_REGEX,
+} from './utils/email-sanitizer';

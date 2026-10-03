@@ -1,16 +1,17 @@
 import { AppError } from '../../../shared/errors';
 
-const CR_OR_LF_REGEX = /[\r\n]/;
+export const HEADER_INJECTION_REGEX = /[\r\n\u2028\u2029]/;
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /**
- * Validates that header-controlled values contain no carriage return (CR)
- * or line feed (LF) characters to protect against email header injection.
+ * Validates that header-controlled values contain no carriage return (CR),
+ * line feed (LF), or Unicode line/paragraph separators (U+2028, U+2029)
+ * to protect against email header injection.
  */
 export function assertNoHeaderInjection(value: string, fieldName = 'header'): void {
-  if (CR_OR_LF_REGEX.test(value)) {
+  if (HEADER_INJECTION_REGEX.test(value)) {
     throw AppError.badRequest(
-      `Invalid ${fieldName}: contains illegal carriage return or newline characters.`
+      `Invalid ${fieldName}: contains illegal carriage return, newline, or separator characters.`
     );
   }
 }
@@ -18,10 +19,32 @@ export function assertNoHeaderInjection(value: string, fieldName = 'header'): vo
 /**
  * Strict recipient email format validation.
  */
-export function assertValidEmail(email: string): void {
-  assertNoHeaderInjection(email, 'recipient email');
-  if (!EMAIL_REGEX.test(email.trim()) || email.trim().length > 254) {
-    throw AppError.badRequest(`Invalid recipient email address: "${email}"`);
+export function assertValidEmail(email: string, fieldName = 'recipient email'): void {
+  assertNoHeaderInjection(email, fieldName);
+  const trimmed = email.trim();
+  if (!EMAIL_REGEX.test(trimmed) || trimmed.length > 254) {
+    throw AppError.badRequest(`Invalid ${fieldName}: "${email}"`);
+  }
+}
+
+export interface ValidateEmailHeadersInput {
+  to: string;
+  subject: string;
+  replyTo?: string;
+  from?: string;
+}
+
+/**
+ * Validates all email headers at service boundary to prevent header injection.
+ */
+export function validateEmailHeaders(input: ValidateEmailHeadersInput): void {
+  assertValidEmail(input.to, 'recipient email');
+  assertNoHeaderInjection(input.subject, 'email subject');
+  if (input.replyTo) {
+    assertValidEmail(input.replyTo, 'replyTo email');
+  }
+  if (input.from) {
+    assertValidEmail(input.from, 'from email');
   }
 }
 

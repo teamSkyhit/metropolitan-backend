@@ -73,10 +73,12 @@ Full request/response contracts: Swagger UI at `/api/docs`.
 ### Notifications module
 
 - In-app CRM notifications (`GET /api/v1/notifications`, `GET /api/v1/notifications/unread-count`, `PATCH /api/v1/notifications/read-all`, `PATCH /api/v1/notifications/:id/read`).
-- Personal inbox access is strictly scoped to the authenticated user (`requireAuth(req).userId`) at the database query level; IDOR attempts return 404.
-- Creation of notifications is strictly internal via `notificationsService`; no generic send endpoint is exposed publicly or to CRM.
-- Pluggable email provider abstraction (`NotificationEmailProvider`): default `NoopEmailProvider`, testable via `TestEmailProvider`. Protects against CR/LF header injection and HTML-escapes content.
-- Contact form integration: `handleContactSubmitted()` triggers notifications safely without blocking or failing contact persistence.
+- Notification inbox access requires explicit `notifications:read` permission (granted to `SALES_MANAGER` and `SUPER_ADMIN`).
+- Personal inbox access is strictly scoped to the authenticated user (`requireAuth(req).userId`) at the database query level; ownership is always enforced per authenticated user and IDOR attempts return 404.
+- Creation of notifications is strictly internal via `notificationsService`; all DB-bound create fields are normalized and validated before persistence (title <= 200, message <= 2000, type <= 50, entityType <= 50, idempotencyKey <= 128, valid UUIDs); no generic send endpoint is exposed publicly or to CRM.
+- Pluggable email provider abstraction (`NotificationEmailProvider`): default `NoopEmailProvider`, testable via `TestEmailProvider`. Currently Noop/Test email providers only. Real external email provider and durable cross-process email delivery idempotency are future infrastructure; in-app notification idempotency is durable in PostgreSQL via unique `idempotency_key`, while email deduplication is handled in-memory within the dispatch path.
+- Security: Header injection protection at both service boundary and provider levels rejects CR, LF, CRLF, and Unicode separators (U+2028, U+2029). Dynamic email content is HTML-escaped.
+- Contact form integration: Uses failure-isolated post-persistence notification dispatch via `handleContactSubmitted()`. Contact submission persistence completes before notification handling; the call is awaited in the request flow (not background/queue delivery) and any notification failure is isolated so it never crashes or rolls back the contact submission.
 - Recipient routing is an unconfirmed business rule: resolver defaults to no automatic recipients unless explicitly configured; no hardcoded roles (`SALES_MANAGER`, `SUPER_ADMIN`) are assumed.
 
 ### Website integration (public contact form)
@@ -84,7 +86,7 @@ Full request/response contracts: Swagger UI at `/api/docs`.
 1. Render the captcha widget using action name `contact_submit` (reCAPTCHA v3 or Cloudflare Turnstile).
 2. `POST /api/v1/public/contacts` (or alias `POST /api/v1/public/contact`) with the token in the `X-Captcha-Token` header.
 3. Protected by `rateLimiters.publicForm` (30 req / 15 min per IP) and CORS origins in `PUBLIC_CORS_ORIGINS`.
-4. Stored as `ContactSubmission` with audit actor tracking and soft-delete support. Dispatches asynchronous notification alerts safely via `notificationsService`.
+4. Stored as `ContactSubmission` with audit actor tracking and soft-delete support. Contact persistence completes before notification handling, followed by failure-isolated post-persistence notification dispatch via `notificationsService` (synchronously awaited in the request flow; external message queue deferred).
 
 ### Contact submission workflow & permissions
 

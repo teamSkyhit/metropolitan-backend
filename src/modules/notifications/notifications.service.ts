@@ -7,12 +7,13 @@ import { notificationsRepository, type NotificationRecord } from './notification
 import {
   NOTIFICATION_TYPES,
   type ContactSubmittedNotificationEvent,
+  type CreateNotificationInput,
   type ListNotificationsQuery,
   type NotificationDto,
   type ReadAllResponse,
   type UnreadCountResponse,
 } from './notifications.schema';
-import { escapeHtml } from './utils/email-sanitizer';
+import { escapeHtml, validateEmailHeaders } from './utils/email-sanitizer';
 
 export function toNotificationDto(record: NotificationRecord): NotificationDto {
   return {
@@ -32,6 +33,12 @@ export interface ContactRecipientResolver {
 }
 
 let activeEmailProvider: NotificationEmailProvider = new NoopEmailProvider();
+
+/**
+ * In-memory registry of dispatched contact email IDs within the current runtime session.
+ * Real durable cross-process email idempotency requires a persistent delivery queue/table.
+ */
+const dispatchedContactEmailIds = new Set<string>();
 
 /**
  * Default resolver returns empty lists. No hardcoded roles (SALES_MANAGER, SUPER_ADMIN)
@@ -54,6 +61,10 @@ export const notificationsService = {
 
   setContactRecipientResolver(resolver: ContactRecipientResolver): void {
     activeContactRecipientResolver = resolver;
+  },
+
+  clearDispatchHistory(): void {
+    dispatchedContactEmailIds.clear();
   },
 
   async list(recipientUserId: string, query: ListNotificationsQuery): Promise<Paginated<NotificationDto>> {
@@ -81,20 +92,16 @@ export const notificationsService = {
     return notificationsRepository.markAllAsRead(recipientUserId, recipientUserId);
   },
 
-  async createInAppNotification(input: {
-    recipientUserId: string;
-    type: string;
-    title: string;
-    message: string;
-    entityType?: string | null;
-    entityId?: string | null;
-    idempotencyKey?: string | null;
-  }): Promise<{ notification: NotificationDto; isDuplicate: boolean }> {
+  async createInAppNotification(
+    input: CreateNotificationInput
+  ): Promise<{ notification: NotificationDto; isDuplicate: boolean }> {
     const { record, isDuplicate } = await notificationsRepository.create(input);
     return { notification: toNotificationDto(record), isDuplicate };
   },
 
   async sendEmail(input: SendEmailInput): Promise<boolean> {
+    validateEmailHeaders(input);
+
     try {
       const result = await activeEmailProvider.send(input);
       if (!result.success) {
@@ -129,14 +136,29 @@ export const notificationsService = {
         return;
       }
 
-      const safeSubject = event.subject ? ` - ${event.subject}` : '';
-      const notificationTitle = `New Contact Inquiry: ${event.name}${safeSubject}`;
-      const notificationMessage = `Inquiry received from ${event.name} (${event.email}).`;
+      // 1. Construct deterministic readable title clamped safely to 200 characters without trailing separators
+      const trimmedName = event.name.trim();
+      const trimmedSubject = event.subject?.trim();
+      let notificationTitle = trimmedSubject
+        ? `New Contact Inquiry: ${trimmedName} — ${trimmedSubject}`
+        : `New Contact Inquiry: ${trimmedName}`;
 
-      // 1. In-App Notifications for resolved users
+      if (notificationTitle.length > 200) {
+        notificationTitle = notificationTitle.slice(0, 200).trimEnd();
+        notificationTitle = notificationTitle.replace(/[\s—–-]+$/, '').trimEnd();
+      }
+
+      // Clamp message safely to 2000 characters
+      let notificationMessage = `Inquiry received from ${trimmedName} (${event.email.trim()}).`;
+      if (notificationMessage.length > 2000) {
+        notificationMessage = notificationMessage.slice(0, 2000);
+      }
+
+      // 2. In-App Notifications for resolved users (durable DB idempotency)
+      let allInAppDuplicates = recipients.inAppUserIds.length > 0;
       for (const userId of recipients.inAppUserIds) {
         const idempotencyKey = `contact:${event.id}:user:${userId}`;
-        await notificationsRepository.create({
+        const result = await notificationsRepository.create({
           recipientUserId: userId,
           type: NOTIFICATION_TYPES.CONTACT_SUBMISSION,
           title: notificationTitle,
@@ -145,11 +167,19 @@ export const notificationsService = {
           entityId: event.id,
           idempotencyKey,
         });
+        if (!result.isDuplicate) {
+          allInAppDuplicates = false;
+        }
       }
 
-      // 2. Email Notifications for resolved addresses
-      if (recipients.emails.length > 0) {
-        const emailSubject = `[Metro CRM] New Contact Inquiry: ${event.name}`;
+      // 3. Email Notifications for resolved addresses
+      // Prevent duplicate sends within the runtime dispatch path
+      const alreadyDispatchedEmails =
+        (recipients.inAppUserIds.length > 0 && allInAppDuplicates) || dispatchedContactEmailIds.has(event.id);
+
+      if (recipients.emails.length > 0 && !alreadyDispatchedEmails) {
+        const cleanName = trimmedName.replace(/[\r\n\u2028\u2029]/g, ' ');
+        const emailSubject = `[Metro CRM] New Contact Inquiry: ${cleanName}`;
         const emailText =
           `A new contact form inquiry has been submitted.\n\n` +
           `Name: ${event.name}\n` +
@@ -178,9 +208,11 @@ export const notificationsService = {
             subject: emailSubject,
             text: emailText,
             html: emailHtml,
-            replyTo: event.email,
+            replyTo: event.email.trim(),
           });
         }
+
+        dispatchedContactEmailIds.add(event.id);
       }
     } catch (err: unknown) {
       // Must never crash caller or roll back contact submission
