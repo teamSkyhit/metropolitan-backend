@@ -59,16 +59,28 @@ npm run dev             # http://localhost:5000
 
 ## Modules
 
-| Module        | CRM endpoints (`/api/v1`)                                 | Public endpoints (`/api/v1/public`)  |
-| ------------- | --------------------------------------------------------- | ------------------------------------ |
-| health        | `GET /health`, `GET /health/ready`                        | n/a                                  |
-| auth          | login, refresh, logout, logout-all, me, change-password   | n/a                                  |
-| users         | CRUD for Sales Managers, lookup                           | n/a                                  |
-| enquiries     | list, detail, notes, status, assignee, follow-ups, delete | `POST /enquiries`                    |
-| contacts      | list, detail, status, delete                              | `POST /contacts` (alias: `/contact`) |
-| notifications | list, unread-count, read-all, mark-read                   | n/a                                  |
+| Module        | CRM endpoints (`/api/v1`)                                   | Public endpoints (`/api/v1/public`)        |
+| ------------- | ----------------------------------------------------------- | ------------------------------------------ |
+| health        | `GET /health`, `GET /health/ready`                          | n/a                                        |
+| auth          | login, refresh, logout, logout-all, me, change-password     | n/a                                        |
+| users         | CRUD for Sales Managers, lookup                             | n/a                                        |
+| enquiries     | list, detail, notes, status, assignee, follow-ups, delete   | `POST /enquiries`                          |
+| brands        | list, create, detail, update, delete, restore, logo/banner  | `GET /brands`, `GET /brands/:slug`         |
+| categories    | list, create, detail, update, delete, restore, banner       | `GET /categories`, `GET /categories/:slug` |
+| products      | list, create, detail, update, delete, restore, image, specs | `GET /products`, `GET /products/:slug`     |
+| media         | list, detail, upload, delete (with in-use reference guard)  | n/a                                        |
+| dashboard     | summary, trends, recent-enquiries                           | n/a                                        |
+| contacts      | list, detail, status, delete                                | `POST /contacts` (alias: `/contact`)       |
+| notifications | list, unread-count, read-all, mark-read                     | n/a                                        |
 
 Full request/response contracts: Swagger UI at `/api/docs`.
+
+### Storage & Media Library
+
+- Default driver: `STORAGE_DRIVER=local` saves uploads to local filesystem under `uploads/` and serves statically from `/uploads`.
+- Directory traversal protection prevents deletion outside the configured storage directory.
+- S3 driver is available via `STORAGE_DRIVER=s3` when `S3_BUCKET` and AWS credentials are provided.
+- Media delete guard (`DELETE /api/v1/media/:id`) returns 409 Conflict if an active product, brand logo/banner, or category banner references the asset.
 
 ### Notifications module
 
