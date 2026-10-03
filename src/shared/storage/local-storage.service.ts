@@ -16,7 +16,12 @@ export class LocalStorageService implements IStorageService {
   async upload(file: StorageFile, folder = 'general'): Promise<StoredFile> {
     const ext = path.extname(file.filename) || '.bin';
     const filename = `${randomUUID()}${ext}`;
-    const targetDir = path.join(this.baseDir, folder);
+    const targetDir = path.resolve(this.baseDir, folder);
+    const relFolder = path.relative(this.baseDir, targetDir);
+
+    if (relFolder.startsWith('..') || path.isAbsolute(relFolder)) {
+      throw new Error('Invalid upload folder destination');
+    }
 
     await fs.mkdir(targetDir, { recursive: true });
     const targetPath = path.join(targetDir, filename);
@@ -44,9 +49,15 @@ export class LocalStorageService implements IStorageService {
     }
     relative = relative.replace(/^[/\\]+/, '');
 
-    const absolutePath = path.resolve(this.baseDir, relative);
-    // Security check: ensure path does not escape baseDir
-    if (!absolutePath.startsWith(this.baseDir)) return;
+    const resolvedBase = path.resolve(this.baseDir);
+    const absolutePath = path.resolve(resolvedBase, relative);
+    const relFromBase = path.relative(resolvedBase, absolutePath);
+
+    // Robust containment check: ensure target path is strictly within baseDir.
+    // Rejects directory traversal (starts with '..'), absolute escapes, and baseDir root itself.
+    if (relFromBase.startsWith('..') || path.isAbsolute(relFromBase) || relFromBase === '') {
+      return;
+    }
 
     try {
       await fs.unlink(absolutePath);
