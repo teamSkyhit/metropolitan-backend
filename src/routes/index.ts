@@ -9,6 +9,7 @@ import { categoriesModule, categoriesService } from '../modules/categories';
 import { contactsModule } from '../modules/contacts';
 import { dashboardModule } from '../modules/dashboard';
 import { mediaModule, registerMediaReferenceCheckers } from '../modules/media';
+import { notificationsModule } from '../modules/notifications';
 import { productsModule, productsService, registerProductAssignValidation } from '../modules/products';
 import type { AppModule } from '../shared/module';
 
@@ -27,6 +28,7 @@ export const modules: readonly AppModule[] = [
   mediaModule,
   dashboardModule,
   contactsModule,
+  notificationsModule,
   // @generator:modules
 ];
 

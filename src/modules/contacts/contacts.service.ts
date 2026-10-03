@@ -12,6 +12,8 @@ import {
   type SubmitContactResponse,
 } from './contacts.schema';
 
+import { notificationsService } from '../notifications';
+
 export function toContactSummaryDto(record: ContactSubmissionRecord): ContactSummaryDto {
   return {
     id: record.id,
@@ -46,6 +48,22 @@ export function toContactDetailDto(record: ContactSubmissionRecord): ContactDeta
 export const contactsService = {
   async submit(body: SubmitContactBody, sourceIp?: string): Promise<SubmitContactResponse> {
     const record = await contactsRepository.create(body, sourceIp);
+
+    // Dispatch notification without blocking or failing contact persistence
+    try {
+      await notificationsService.handleContactSubmitted({
+        id: record.id,
+        name: record.name,
+        email: record.email,
+        mobile: record.mobile,
+        company: record.company,
+        subject: record.subject,
+        createdAt: record.createdAt,
+      });
+    } catch {
+      // Handled internally in notificationsService, catch is extra safeguard
+    }
+
     return {
       id: record.id,
       message: 'Your message has been received.',

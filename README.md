@@ -59,22 +59,32 @@ npm run dev             # http://localhost:5000
 
 ## Modules
 
-| Module    | CRM endpoints (`/api/v1`)                                 | Public endpoints (`/api/v1/public`)  |
-| --------- | --------------------------------------------------------- | ------------------------------------ |
-| health    | `GET /health`, `GET /health/ready`                        | n/a                                  |
-| auth      | login, refresh, logout, logout-all, me, change-password   | n/a                                  |
-| users     | CRUD for Sales Managers, lookup                           | n/a                                  |
-| enquiries | list, detail, notes, status, assignee, follow-ups, delete | `POST /enquiries`                    |
-| contacts  | list, detail, status, delete                              | `POST /contacts` (alias: `/contact`) |
+| Module        | CRM endpoints (`/api/v1`)                                 | Public endpoints (`/api/v1/public`)  |
+| ------------- | --------------------------------------------------------- | ------------------------------------ |
+| health        | `GET /health`, `GET /health/ready`                        | n/a                                  |
+| auth          | login, refresh, logout, logout-all, me, change-password   | n/a                                  |
+| users         | CRUD for Sales Managers, lookup                           | n/a                                  |
+| enquiries     | list, detail, notes, status, assignee, follow-ups, delete | `POST /enquiries`                    |
+| contacts      | list, detail, status, delete                              | `POST /contacts` (alias: `/contact`) |
+| notifications | list, unread-count, read-all, mark-read                   | n/a                                  |
 
 Full request/response contracts: Swagger UI at `/api/docs`.
+
+### Notifications module
+
+- In-app CRM notifications (`GET /api/v1/notifications`, `GET /api/v1/notifications/unread-count`, `PATCH /api/v1/notifications/read-all`, `PATCH /api/v1/notifications/:id/read`).
+- Personal inbox access is strictly scoped to the authenticated user (`requireAuth(req).userId`) at the database query level; IDOR attempts return 404.
+- Creation of notifications is strictly internal via `notificationsService`; no generic send endpoint is exposed publicly or to CRM.
+- Pluggable email provider abstraction (`NotificationEmailProvider`): default `NoopEmailProvider`, testable via `TestEmailProvider`. Protects against CR/LF header injection and HTML-escapes content.
+- Contact form integration: `handleContactSubmitted()` triggers notifications safely without blocking or failing contact persistence.
+- Recipient routing is an unconfirmed business rule: resolver defaults to no automatic recipients unless explicitly configured; no hardcoded roles (`SALES_MANAGER`, `SUPER_ADMIN`) are assumed.
 
 ### Website integration (public contact form)
 
 1. Render the captcha widget using action name `contact_submit` (reCAPTCHA v3 or Cloudflare Turnstile).
 2. `POST /api/v1/public/contacts` (or alias `POST /api/v1/public/contact`) with the token in the `X-Captcha-Token` header.
 3. Protected by `rateLimiters.publicForm` (30 req / 15 min per IP) and CORS origins in `PUBLIC_CORS_ORIGINS`.
-4. Stored as `ContactSubmission` with audit actor tracking and soft-delete support. Email / webhook notification dispatch is deferred to BE-3.4 (Notification Module).
+4. Stored as `ContactSubmission` with audit actor tracking and soft-delete support. Dispatches asynchronous notification alerts safely via `notificationsService`.
 
 ### Contact submission workflow & permissions
 
