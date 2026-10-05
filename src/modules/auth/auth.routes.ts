@@ -4,6 +4,12 @@ import { authController } from './auth.controller';
 
 export const authRouter = Router();
 
+// Auth responses contain credentials, tokens, or session state; never cache them.
+authRouter.use((_req, res, next) => {
+  res.setHeader('Cache-Control', 'no-store');
+  next();
+});
+
 // Credential endpoints: stricter per-IP rate limit.
 authRouter.post('/login', rateLimiters.auth, authController.login);
 authRouter.post('/refresh', rateLimiters.auth, authController.refresh);
