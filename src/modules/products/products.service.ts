@@ -210,6 +210,18 @@ export const productsService = {
     return toProductDto(record);
   },
 
+  async getByIds(ids: string[]): Promise<ProductDto[]> {
+    if (ids.length === 0) return [];
+    const records = await productsRepository.findByIds(ids);
+    return records.map(toProductDto);
+  },
+
+  async getByIdsPublic(ids: string[]): Promise<PublicProductDto[]> {
+    if (ids.length === 0) return [];
+    const records = await productsRepository.findByIdsPublic(ids);
+    return records.map(toPublicProductDto);
+  },
+
   async getBySlugPublic(slug: string): Promise<PublicProductDto> {
     const record = await productsRepository.findByIdOrSkuPublic(slug);
     if (!record) throw AppError.notFound('Product');

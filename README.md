@@ -72,8 +72,59 @@ npm run dev             # http://localhost:5000
 | dashboard     | summary, trends, recent-enquiries                           | n/a                                        |
 | contacts      | list, detail, status, delete                                | `POST /contacts` (alias: `/contact`)       |
 | notifications | list, unread-count, read-all, mark-read                     | n/a                                        |
+| homepage      | list, detail, create, update, delete, reorder               | `GET /homepage`                            |
 
 Full request/response contracts: Swagger UI at `/api/docs`.
+
+### Homepage CMS Module
+
+- **Public Homepage Endpoint**: `GET /api/v1/public/homepage`
+  - Unauthenticated, read-heavy public endpoint returning active, non-deleted homepage sections ordered by `sortOrder ASC, id ASC`.
+  - Protected with `rateLimiters.publicCatalog`.
+  - Returns public-safe response shape `{ success: true, data: { sections: [...] } }`. Internal audit metadata (`createdById`, `updatedById`, `deletedAt`) and media `storageKey` are strictly excluded.
+- **CRM Management Endpoints**:
+  - `GET /api/v1/homepage/sections`: requires `homepage:read` (`SALES_MANAGER`, `SUPER_ADMIN`)
+  - `GET /api/v1/homepage/sections/:id`: requires `homepage:read` (`SALES_MANAGER`, `SUPER_ADMIN`)
+  - `POST /api/v1/homepage/sections`: requires `homepage:create` (`SUPER_ADMIN`)
+  - `PATCH /api/v1/homepage/sections/:id`: requires `homepage:update` (`SUPER_ADMIN`)
+  - `PATCH /api/v1/homepage/sections/reorder`: requires `homepage:update` (`SUPER_ADMIN`)
+  - `DELETE /api/v1/homepage/sections/:id`: requires `homepage:delete` (`SUPER_ADMIN`)
+- **Permissions & Role Access**:
+  - `SUPER_ADMIN`: holds all homepage permissions (`homepage:read`, `homepage:create`, `homepage:update`, `homepage:delete`).
+  - `SALES_MANAGER`: granted `homepage:read` for viewing homepage content in CRM; write permissions are reserved for `SUPER_ADMIN` (unconfirmed business rule requiring senior confirmation).
+- **Supported Section Types**:
+  - `HERO`: Carousel/slider container with structured slides referencing Media Library assets (`mediaId`), heading, subheading, safe CTA label and URL, sort order, and active toggle. Single-instance active section.
+  - `FEATURED_PRODUCTS`: References active, published products by UUID (`productIds`). Validated via Products service boundary. Single-instance active section.
+  - `FEATURED_CATEGORIES`: References active categories by UUID (`categoryIds`). Validated via Categories service boundary. Single-instance active section.
+  - `FEATURED_BRANDS`: References active brands by UUID (`brandIds`). Validated via Brands service boundary. Single-instance active section.
+  - `PROMO_BANNER`: Promotional banner referencing Media Library image (`mediaId`), heading, description, safe CTA label and URL. Multiple instances allowed across the homepage.
+- **Section Type Immutability**:
+  - A section's `type` is fixed at creation time and cannot be modified via `PATCH` to ensure strict payload schema consistency.
+- **Single-Instance Enforcement**:
+  - Attempting to create or activate a second instance of `HERO`, `FEATURED_PRODUCTS`, `FEATURED_CATEGORIES`, or `FEATURED_BRANDS` returns HTTP 409 Conflict (`HOMEPAGE_SECTION_DUPLICATE`).
+- **Ordering & Atomic Reordering**:
+  - Deterministic sort order: `sortOrder ASC, id ASC`.
+  - Reordering (`PATCH /api/v1/homepage/sections/reorder`) executes inside a database transaction (`prisma.$transaction`), validates all section IDs exist and are not deleted, and updates `updatedById` and `updatedAt`.
+- **Media Library Integration & Delete Guard**:
+  - CMS references approved Media Library records via service boundary (`mediaService`); no duplicate upload system is created.
+  - Media delete guard (`DELETE /api/v1/media/:id`) blocks deletion with HTTP 409 Conflict (`MEDIA_IN_USE`) if the asset is actively referenced by an active homepage hero slide or banner.
+- **Active / Inactive & Soft-Delete Workflow**:
+  - Inactive sections (`isActive: false`) are visible and editable in CRM but omitted from the public endpoint.
+  - Transitioning an inactive section to active revalidates its effective media, product, category, or brand references before persistence. Invalid references return HTTP 400 (`HOMEPAGE_REFERENCE_INVALID`) and the section remains inactive; single-instance checks still apply.
+  - Soft-deleting a section records `deletedAt` and `updatedById`. Soft-deleted sections are excluded from CRM lists and public responses.
+- **Partial PATCH Semantics**:
+  - `PATCH /api/v1/homepage/sections/:id` writes only fields explicitly supplied by the client, plus `updatedById` and Prisma-managed `updatedAt`. Omitted `content` is neither reconstructed nor written, reducing lost-update risk during concurrent edits.
+- **Text / HTML Policy**:
+  - Text fields are stored and returned as plain strings. HTML is not interpreted or sanitized as rich text. Consumers must render these values as text, not via raw HTML.
+- **Stable HERO Slide IDs**:
+  - HERO slide IDs are UUIDs, unique within their section. Missing IDs are generated once and persisted on create or content update; supplied valid IDs are preserved.
+  - Legacy JSON rows without slide IDs receive deterministic compatibility IDs in public responses. Public reads never generate random IDs, so repeated responses remain stable; the IDs are persisted if that HERO content is later written through the CMS.
+- **Stale Reference Resilience Policy**:
+  - Referenced products that are soft-deleted, in draft status, or belong to an inactive/deleted brand or category are omitted from public response items.
+  - Referenced brands, categories, or media assets that are deactivated or soft-deleted are omitted from public response items.
+  - If all referenced items within a section are stale or inactive (0 valid items remaining), the empty section is safely omitted from the public response to prevent broken UI layouts and 500 errors.
+- **CTA URL Security**:
+  - Validates all CTA links against an approved pattern: internal relative paths starting with `/` (e.g. `/products`) or secure HTTP/HTTPS URLs. Unsafe schemes (`javascript:`, `data:`, `file:`, `//`) and whitespace are rejected.
 
 ### Storage & Media Library
 

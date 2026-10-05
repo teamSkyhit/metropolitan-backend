@@ -130,6 +130,18 @@ export const categoriesService = {
     return toCategoryDto(record);
   },
 
+  async getByIds(ids: string[]): Promise<CategoryDto[]> {
+    if (ids.length === 0) return [];
+    const items = await categoriesRepository.findByIds(ids);
+    return items.map(toCategoryDto);
+  },
+
+  async getByIdsPublic(ids: string[]): Promise<PublicCategoryDto[]> {
+    if (ids.length === 0) return [];
+    const items = await categoriesRepository.findByIdsPublic(ids);
+    return items.map(toPublicCategoryDto);
+  },
+
   /** Public list: only active, non-deleted categories sorted by sortOrder ASC, then name ASC. */
   async listPublic(): Promise<PublicCategoryDto[]> {
     const items = await categoriesRepository.findManyPublic();

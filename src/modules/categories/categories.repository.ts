@@ -58,6 +58,28 @@ export const categoriesRepository = {
     });
   },
 
+  async findByIdsPublic(ids: string[]): Promise<Category[]> {
+    if (ids.length === 0) return [];
+    return prisma.category.findMany({
+      where: {
+        id: { in: ids },
+        isActive: true,
+        ...notDeleted,
+      },
+      orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+    });
+  },
+
+  async findByIds(ids: string[]): Promise<Category[]> {
+    if (ids.length === 0) return [];
+    return prisma.category.findMany({
+      where: {
+        id: { in: ids },
+        ...notDeleted,
+      },
+    });
+  },
+
   isMediaUrlReferenced(url: string): Promise<boolean> {
     return prisma.category
       .count({
