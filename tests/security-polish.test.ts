@@ -220,6 +220,7 @@ describe('BE-3.5 Security Polish & Hardening', () => {
         '/public/enquiries',
         '/public/contacts',
         '/public/contact',
+        '/public/homepage',
       ];
 
       for (const pubPath of publicPaths) {

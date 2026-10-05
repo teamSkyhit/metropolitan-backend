@@ -11,6 +11,7 @@ import { dashboardModule } from '../modules/dashboard';
 import { mediaModule, registerMediaReferenceCheckers } from '../modules/media';
 import { notificationsModule } from '../modules/notifications';
 import { productsModule, productsService, registerProductAssignValidation } from '../modules/products';
+import { homepageModule, homepageService } from '../modules/homepage';
 import type { AppModule } from '../shared/module';
 
 /**
@@ -29,6 +30,7 @@ export const modules: readonly AppModule[] = [
   dashboardModule,
   contactsModule,
   notificationsModule,
+  homepageModule,
   // @generator:modules
 ];
 
@@ -45,9 +47,10 @@ registerMediaReferenceCheckers([
   { name: 'Product', checker: (url) => productsService.isMediaUrlReferenced(url) },
   { name: 'Brand', checker: (url) => brandsService.isMediaUrlReferenced(url) },
   { name: 'Category', checker: (url) => categoriesService.isMediaUrlReferenced(url) },
+  { name: 'HomepageSection', checker: (url, id) => homepageService.isMediaUrlReferenced(url, id) },
 ]);
 
-const CATALOG_BASE_PATHS = new Set(['/brands', '/categories', '/products']);
+const CATALOG_BASE_PATHS = new Set(['/brands', '/categories', '/products', '/homepage']);
 
 /** Builds the /api/v1 router from the module list. */
 export function createApiRouter(): Router {

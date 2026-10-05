@@ -22,7 +22,7 @@ export function toMediaDto(record: MediaRecord): MediaDto {
 
 export interface MediaReferenceChecker {
   name: string;
-  checker: (url: string) => Promise<boolean>;
+  checker: (url: string, id?: string) => Promise<boolean>;
 }
 
 let configuredReferenceCheckers: MediaReferenceChecker[] = [];
@@ -49,6 +49,12 @@ export const mediaService = {
     const record = await mediaRepository.findById(id);
     if (!record) throw AppError.notFound('Media');
     return toMediaDto(record);
+  },
+
+  async getByIds(ids: string[]): Promise<MediaDto[]> {
+    if (ids.length === 0) return [];
+    const items = await mediaRepository.findByIds(ids);
+    return items.map(toMediaDto);
   },
 
   async upload(file: Express.Multer.File, actorId: string | null): Promise<MediaDto> {
@@ -82,7 +88,7 @@ export const mediaService = {
     if (!record) throw AppError.notFound('Media');
 
     for (const { name, checker } of configuredReferenceCheckers) {
-      const isReferenced = await checker(record.publicUrl);
+      const isReferenced = await checker(record.publicUrl, record.id);
       if (isReferenced) {
         throw AppError.conflict(
           `Cannot delete media because it is actively referenced by live ${name} records`,

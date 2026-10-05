@@ -22,6 +22,16 @@ export const mediaRepository = {
     });
   },
 
+  findByIds(ids: string[]): Promise<MediaRecord[]> {
+    if (ids.length === 0) return Promise.resolve([]);
+    return prisma.media.findMany({
+      where: {
+        id: { in: ids },
+        ...notDeleted,
+      },
+    });
+  },
+
   findByIdIncludingDeleted(id: string): Promise<MediaRecord | null> {
     return prisma.media.findUnique({
       where: { id },

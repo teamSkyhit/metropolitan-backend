@@ -103,6 +103,18 @@ export const brandsService = {
     return toBrandDto(record);
   },
 
+  async getByIds(ids: string[]): Promise<BrandDto[]> {
+    if (ids.length === 0) return [];
+    const items = await brandsRepository.findByIds(ids);
+    return items.map(toBrandDto);
+  },
+
+  async getByIdsPublic(ids: string[]): Promise<PublicBrandDto[]> {
+    if (ids.length === 0) return [];
+    const items = await brandsRepository.findByIdsPublic(ids);
+    return items.map(toPublicBrandDto);
+  },
+
   /** Public list: only active, non-deleted brands sorted by sortOrder ASC, then name ASC. */
   async listPublic(): Promise<PublicBrandDto[]> {
     const items = await brandsRepository.findManyPublic();

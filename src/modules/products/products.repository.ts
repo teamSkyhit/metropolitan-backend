@@ -273,6 +273,31 @@ export const productsRepository = {
     return null;
   },
 
+  async findByIdsPublic(ids: string[]): Promise<PublicProductRecord[]> {
+    if (ids.length === 0) return [];
+    return prisma.product.findMany({
+      where: {
+        id: { in: ids },
+        status: 'PUBLISHED',
+        deletedAt: null,
+        brand: { deletedAt: null, isActive: true },
+        category: { deletedAt: null, isActive: true },
+      },
+      include: publicProductIncludes,
+    });
+  },
+
+  async findByIds(ids: string[]): Promise<ProductRecord[]> {
+    if (ids.length === 0) return [];
+    return prisma.product.findMany({
+      where: {
+        id: { in: ids },
+        ...notDeleted,
+      },
+      include: productIncludes,
+    });
+  },
+
   create(data: CreateProductBody & { slug: string }, actorId: string): Promise<ProductRecord> {
     return prisma.product.create({
       data: {
