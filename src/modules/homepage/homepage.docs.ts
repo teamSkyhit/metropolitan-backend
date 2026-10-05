@@ -87,7 +87,10 @@ export function registerHomepageDocs(registry: OpenAPIRegistry): void {
     summary: 'Create a new homepage section (CRM)',
     description:
       'Requires `homepage:create`. Content schema is strictly validated against section type. ' +
-      'Enforces single-instance constraint on HERO, FEATURED_PRODUCTS, FEATURED_CATEGORIES, and FEATURED_BRANDS.',
+      'Enforces single-instance constraint on HERO, FEATURED_PRODUCTS, FEATURED_CATEGORIES, and FEATURED_BRANDS. ' +
+      'HERO slide IDs are UUIDs; missing IDs are assigned once and persisted. ' +
+      'Text fields are stored and returned as plain strings. HTML is not interpreted or sanitized as rich text. ' +
+      'Consumers must render these values as text, not via raw HTML.',
     request: { body: json(createHomepageSectionBodySchema) },
     responses: {
       201: jsonResponse('Homepage section created', successBody(homepageSectionDtoSchema)),
@@ -103,7 +106,11 @@ export function registerHomepageDocs(registry: OpenAPIRegistry): void {
     summary: 'Update a homepage section (CRM)',
     description:
       'Requires `homepage:update`. Section type cannot be modified. ' +
-      'Content changes are re-validated against the existing section type and module service boundaries.',
+      'Only explicitly supplied fields are written. Content changes are re-validated against the existing section ' +
+      'type and module service boundaries. Activating an inactive section revalidates its effective references before persistence. ' +
+      'HERO slide IDs must be unique UUIDs and are preserved when supplied on later updates. ' +
+      'Text fields are stored and returned as plain strings. HTML is not interpreted or sanitized as rich text. ' +
+      'Consumers must render these values as text, not via raw HTML.',
     request: { params: idParamsSchema, body: json(updateHomepageSectionBodySchema) },
     responses: {
       200: jsonResponse('Homepage section updated', successBody(homepageSectionDtoSchema)),

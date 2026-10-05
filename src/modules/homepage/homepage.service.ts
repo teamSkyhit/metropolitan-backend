@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import { AppError } from '../../shared/errors';
 import { brandsService } from '../brands';
@@ -72,9 +72,6 @@ async function validateSectionReferences(type: HomepageSectionType, content: unk
             HomepageErrorCode.REFERENCE_INVALID,
             { mediaId: slide.mediaId }
           );
-        }
-        if (!slide.id) {
-          slide.id = randomUUID();
         }
       }
       return hero;
@@ -154,6 +151,33 @@ async function validateSectionReferences(type: HomepageSectionType, content: unk
   }
 }
 
+function normalizeContentForPersistence(type: HomepageSectionType, content: unknown): unknown {
+  if (type !== HomepageSectionType.HERO) return content;
+
+  const hero = content as HeroContent;
+  return {
+    ...hero,
+    slides: hero.slides.map((slide) => ({
+      ...slide,
+      id: slide.id ?? randomUUID(),
+    })),
+  } satisfies HeroContent;
+}
+
+function getLegacyHeroSlideId(sectionId: string, slide: HeroSlide, index: number): string {
+  const hex = createHash('sha256')
+    .update(`${sectionId}:${index}:${JSON.stringify(slide)}`)
+    .digest('hex')
+    .slice(0, 32)
+    .split('');
+
+  // RFC 4122-compatible deterministic UUID for legacy JSON rows without slide IDs.
+  hex[12] = '5';
+  hex[16] = ((Number.parseInt(hex[16]!, 16) & 0x3) | 0x8).toString(16);
+  const value = hex.join('');
+  return `${value.slice(0, 8)}-${value.slice(8, 12)}-${value.slice(12, 16)}-${value.slice(16, 20)}-${value.slice(20)}`;
+}
+
 export const homepageService = {
   async list(): Promise<HomepageSectionDto[]> {
     const records = await homepageRepository.findMany();
@@ -180,7 +204,8 @@ export const homepageService = {
       }
     }
 
-    const validatedContent = await validateSectionReferences(body.type, body.content);
+    const normalizedContent = normalizeContentForPersistence(body.type, body.content);
+    const validatedContent = await validateSectionReferences(body.type, normalizedContent);
 
     try {
       const record = await homepageRepository.create(
@@ -218,22 +243,27 @@ export const homepageService = {
       }
     }
 
-    let updatedContent = existing.content;
+    let updatedContent: unknown;
     if (body.content !== undefined) {
       const schema = getContentSchemaForType(sectionType);
       const parsedContent = schema.parse(body.content);
-      updatedContent = (await validateSectionReferences(sectionType, parsedContent)) as typeof updatedContent;
+      const normalizedContent = normalizeContentForPersistence(sectionType, parsedContent);
+      updatedContent = await validateSectionReferences(sectionType, normalizedContent);
+    } else if (body.isActive === true && !existing.isActive) {
+      const schema = getContentSchemaForType(sectionType);
+      const effectiveContent = schema.parse(existing.content);
+      await validateSectionReferences(sectionType, effectiveContent);
     }
 
     try {
       const updated = await homepageRepository.update(
         id,
         {
-          title: body.title,
-          subtitle: body.subtitle,
-          sortOrder: body.sortOrder,
-          isActive: body.isActive,
-          content: updatedContent,
+          ...(body.title !== undefined && { title: body.title }),
+          ...(body.subtitle !== undefined && { subtitle: body.subtitle }),
+          ...(body.sortOrder !== undefined && { sortOrder: body.sortOrder }),
+          ...(body.isActive !== undefined && { isActive: body.isActive }),
+          ...(body.content !== undefined && { content: updatedContent }),
         },
         actorId
       );
@@ -345,8 +375,8 @@ export const homepageService = {
           const activeSlidesWithMedia = slides
             .filter((s) => s.isActive && mediaMap.has(s.mediaId))
             .sort((a, b) => a.sortOrder - b.sortOrder)
-            .map((s) => ({
-              id: s.id ?? randomUUID(),
+            .map((s, index) => ({
+              id: s.id ?? getLegacyHeroSlideId(section.id, s, index),
               heading: s.heading,
               subheading: s.subheading ?? null,
               media: mediaMap.get(s.mediaId)!,

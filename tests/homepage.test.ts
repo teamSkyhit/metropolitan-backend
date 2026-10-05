@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { HomepageErrorCode, HomepageSectionType } from '../src/modules/homepage';
+import { homepageRepository } from '../src/modules/homepage/homepage.repository';
 import { Prisma } from '@prisma/client';
 import { api } from './helpers/app';
 import { signInAs, type Session } from './helpers/auth';
@@ -1170,6 +1171,294 @@ describe('Homepage CMS Module (BE-3.6)', () => {
           content: { brandIds: [activeBrand.id] },
         })
         .expect(400);
+    });
+  });
+
+  describe('Activation Revalidation & Partial PATCH Semantics', () => {
+    it('keeps an inactive section inactive when its referenced media was deleted', async () => {
+      const media = await uploadTestMedia();
+      const created = await api()
+        .post('/api/v1/homepage/sections')
+        .set(admin.auth)
+        .send({
+          type: HomepageSectionType.PROMO_BANNER,
+          isActive: false,
+          content: { heading: 'Inactive banner', mediaId: media.id },
+        })
+        .expect(201);
+
+      await api().delete(`/api/v1/media/${media.id}`).set(admin.auth).expect(204);
+
+      const response = await api()
+        .patch(`/api/v1/homepage/sections/${created.body.data.id}`)
+        .set(admin.auth)
+        .send({ isActive: true })
+        .expect(400);
+
+      expect(response.body.error.code).toBe(HomepageErrorCode.REFERENCE_INVALID);
+      const stored = await prisma.homepageSection.findUnique({ where: { id: created.body.data.id } });
+      expect(stored?.isActive).toBe(false);
+    });
+
+    it('rejects activation when an inactive featured product is no longer published', async () => {
+      const product = await createTestProduct();
+      const created = await api()
+        .post('/api/v1/homepage/sections')
+        .set(admin.auth)
+        .send({
+          type: HomepageSectionType.FEATURED_PRODUCTS,
+          isActive: false,
+          content: { productIds: [product.id] },
+        })
+        .expect(201);
+
+      await api()
+        .patch(`/api/v1/products/${product.id}`)
+        .set(admin.auth)
+        .send({ status: 'DRAFT' })
+        .expect(200);
+
+      const response = await api()
+        .patch(`/api/v1/homepage/sections/${created.body.data.id}`)
+        .set(admin.auth)
+        .send({ isActive: true })
+        .expect(400);
+
+      expect(response.body.error.code).toBe(HomepageErrorCode.REFERENCE_INVALID);
+      const stored = await prisma.homepageSection.findUnique({ where: { id: created.body.data.id } });
+      expect(stored?.isActive).toBe(false);
+    });
+
+    it('rejects activation of category and brand sections whose references became inactive', async () => {
+      const category = await createTestCategory();
+      const brand = await createTestBrand();
+      const categorySection = await api()
+        .post('/api/v1/homepage/sections')
+        .set(admin.auth)
+        .send({
+          type: HomepageSectionType.FEATURED_CATEGORIES,
+          isActive: false,
+          content: { categoryIds: [category.id] },
+        })
+        .expect(201);
+      const brandSection = await api()
+        .post('/api/v1/homepage/sections')
+        .set(admin.auth)
+        .send({
+          type: HomepageSectionType.FEATURED_BRANDS,
+          isActive: false,
+          content: { brandIds: [brand.id] },
+        })
+        .expect(201);
+
+      await api()
+        .patch(`/api/v1/categories/${category.id}`)
+        .set(admin.auth)
+        .send({ isActive: false })
+        .expect(200);
+      await api().patch(`/api/v1/brands/${brand.id}`).set(admin.auth).send({ isActive: false }).expect(200);
+
+      for (const sectionId of [categorySection.body.data.id, brandSection.body.data.id]) {
+        const response = await api()
+          .patch(`/api/v1/homepage/sections/${sectionId}`)
+          .set(admin.auth)
+          .send({ isActive: true })
+          .expect(400);
+        expect(response.body.error.code).toBe(HomepageErrorCode.REFERENCE_INVALID);
+      }
+    });
+
+    it('activates a valid inactive section successfully', async () => {
+      const media = await uploadTestMedia();
+      const created = await api()
+        .post('/api/v1/homepage/sections')
+        .set(admin.auth)
+        .send({
+          type: HomepageSectionType.HERO,
+          isActive: false,
+          content: { slides: [{ heading: 'Ready', mediaId: media.id }] },
+        })
+        .expect(201);
+
+      const response = await api()
+        .patch(`/api/v1/homepage/sections/${created.body.data.id}`)
+        .set(admin.auth)
+        .send({ isActive: true })
+        .expect(200);
+
+      expect(response.body.data.isActive).toBe(true);
+    });
+
+    it('does not overwrite a concurrent content edit when PATCH supplies title only', async () => {
+      const media = await uploadTestMedia();
+      const created = await api()
+        .post('/api/v1/homepage/sections')
+        .set(admin.auth)
+        .send({
+          type: HomepageSectionType.PROMO_BANNER,
+          content: { heading: 'Original', mediaId: media.id },
+        })
+        .expect(201);
+      const concurrentContent = { heading: 'Concurrent edit', mediaId: media.id };
+      const originalUpdate = homepageRepository.update;
+      const updateSpy = vi
+        .spyOn(homepageRepository, 'update')
+        .mockImplementationOnce(async (id, data, actorId) => {
+          await prisma.homepageSection.update({
+            where: { id },
+            data: { content: concurrentContent },
+          });
+          return originalUpdate(id, data, actorId);
+        });
+
+      try {
+        await api()
+          .patch(`/api/v1/homepage/sections/${created.body.data.id}`)
+          .set(admin.auth)
+          .send({ title: 'Title only' })
+          .expect(200);
+      } finally {
+        updateSpy.mockRestore();
+      }
+
+      const stored = await prisma.homepageSection.findUnique({ where: { id: created.body.data.id } });
+      expect(stored?.content).toEqual(concurrentContent);
+      expect(stored?.title).toBe('Title only');
+    });
+
+    it('omits content from the repository update payload for a sortOrder-only PATCH', async () => {
+      const media = await uploadTestMedia();
+      const created = await api()
+        .post('/api/v1/homepage/sections')
+        .set(admin.auth)
+        .send({
+          type: HomepageSectionType.PROMO_BANNER,
+          content: { heading: 'Keep me', mediaId: media.id },
+        })
+        .expect(201);
+      const updateSpy = vi.spyOn(homepageRepository, 'update');
+
+      try {
+        await api()
+          .patch(`/api/v1/homepage/sections/${created.body.data.id}`)
+          .set(admin.auth)
+          .send({ sortOrder: 42 })
+          .expect(200);
+
+        expect(updateSpy).toHaveBeenCalledWith(created.body.data.id, { sortOrder: 42 }, admin.user.id);
+      } finally {
+        updateSpy.mockRestore();
+      }
+
+      const stored = await prisma.homepageSection.findUnique({ where: { id: created.body.data.id } });
+      expect(stored?.content).toEqual({ heading: 'Keep me', mediaId: media.id });
+    });
+  });
+
+  describe('Stable HERO Slide IDs & Text Policy', () => {
+    it('persists a generated UUID and returns the same slide ID across public reads', async () => {
+      const media = await uploadTestMedia();
+      const created = await api()
+        .post('/api/v1/homepage/sections')
+        .set(admin.auth)
+        .send({
+          type: HomepageSectionType.HERO,
+          content: { slides: [{ heading: 'Stable slide', mediaId: media.id }] },
+        })
+        .expect(201);
+      const slideId = created.body.data.content.slides[0].id;
+
+      expect(slideId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
+      const stored = await prisma.homepageSection.findUnique({ where: { id: created.body.data.id } });
+      expect((stored?.content as { slides: { id: string }[] }).slides[0]?.id).toBe(slideId);
+
+      const first = await api().get('/api/v1/public/homepage').expect(200);
+      const second = await api().get('/api/v1/public/homepage').expect(200);
+      expect(first.body.data.sections[0].content.slides[0].id).toBe(slideId);
+      expect(second.body.data.sections[0].content.slides[0].id).toBe(slideId);
+    });
+
+    it('preserves a supplied existing slide ID on content update', async () => {
+      const media = await uploadTestMedia();
+      const created = await api()
+        .post('/api/v1/homepage/sections')
+        .set(admin.auth)
+        .send({
+          type: HomepageSectionType.HERO,
+          content: { slides: [{ heading: 'Before', mediaId: media.id }] },
+        })
+        .expect(201);
+      const slideId = created.body.data.content.slides[0].id;
+
+      const updated = await api()
+        .patch(`/api/v1/homepage/sections/${created.body.data.id}`)
+        .set(admin.auth)
+        .send({
+          content: { slides: [{ id: slideId, heading: 'After', mediaId: media.id }] },
+        })
+        .expect(200);
+
+      expect(updated.body.data.content.slides[0].id).toBe(slideId);
+      expect(updated.body.data.content.slides[0].heading).toBe('After');
+    });
+
+    it('rejects duplicate and invalid HERO slide IDs', async () => {
+      const media = await uploadTestMedia();
+      const duplicateId = randomUUID();
+
+      for (const slides of [
+        [
+          { id: duplicateId, heading: 'One', mediaId: media.id },
+          { id: duplicateId, heading: 'Two', mediaId: media.id },
+        ],
+        [{ id: 'not-a-uuid', heading: 'Invalid', mediaId: media.id }],
+      ]) {
+        const response = await api()
+          .post('/api/v1/homepage/sections')
+          .set(admin.auth)
+          .send({ type: HomepageSectionType.HERO, content: { slides } })
+          .expect(400);
+        expect(response.body.error.code).toBe('VALIDATION_ERROR');
+      }
+    });
+
+    it('returns a deterministic compatibility UUID for a legacy HERO slide without an ID', async () => {
+      const media = await uploadTestMedia();
+      await prisma.homepageSection.create({
+        data: {
+          type: HomepageSectionType.HERO,
+          isActive: true,
+          content: {
+            slides: [{ heading: 'Legacy', mediaId: media.id, sortOrder: 0, isActive: true }],
+          },
+        },
+      });
+
+      const first = await api().get('/api/v1/public/homepage').expect(200);
+      const second = await api().get('/api/v1/public/homepage').expect(200);
+      const firstId = first.body.data.sections[0].content.slides[0].id;
+      expect(firstId).toMatch(/^[0-9a-f-]{36}$/i);
+      expect(second.body.data.sections[0].content.slides[0].id).toBe(firstId);
+    });
+
+    it('stores and returns HTML-like characters as plain string data', async () => {
+      const media = await uploadTestMedia();
+      const text = '<b>text</b>';
+      const created = await api()
+        .post('/api/v1/homepage/sections')
+        .set(admin.auth)
+        .send({
+          type: HomepageSectionType.PROMO_BANNER,
+          title: text,
+          content: { heading: text, description: text, mediaId: media.id },
+        })
+        .expect(201);
+
+      expect(created.body.data.title).toBe(text);
+      expect(created.body.data.content.heading).toBe(text);
+      const publicResponse = await api().get('/api/v1/public/homepage').expect(200);
+      expect(publicResponse.body.data.sections[0].title).toBe(text);
+      expect(publicResponse.body.data.sections[0].content.description).toBe(text);
     });
   });
 

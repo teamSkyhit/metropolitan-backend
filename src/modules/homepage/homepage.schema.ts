@@ -82,7 +82,14 @@ export const heroContentSchema = z
     slides: z
       .array(heroSlideSchema)
       .min(1, 'Hero section must contain at least 1 slide')
-      .max(10, 'Hero section cannot exceed 10 slides'),
+      .max(10, 'Hero section cannot exceed 10 slides')
+      .refine(
+        (slides) => {
+          const ids = slides.flatMap((slide) => (slide.id ? [slide.id] : []));
+          return new Set(ids).size === ids.length;
+        },
+        { message: 'Hero slide IDs must be unique within the section' }
+      ),
   })
   .strict();
 
@@ -268,7 +275,7 @@ export const homepageSectionDtoSchema = z.object({
 export type HomepageSectionDto = z.infer<typeof homepageSectionDtoSchema>;
 
 export const publicHeroSlideSchema = z.object({
-  id: z.string(),
+  id: z.string().uuid(),
   heading: z.string(),
   subheading: z.string().nullable(),
   media: z.object({
