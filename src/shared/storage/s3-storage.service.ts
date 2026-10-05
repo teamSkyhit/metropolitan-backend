@@ -1,63 +1,92 @@
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
+import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { config } from '../../config/env';
 import { AppError } from '../errors';
 import type { IStorageService, StorageFile, StoredFile } from './storage.types';
 
 /**
- * S3 Storage Provider implementation.
+ * S3-compatible Storage Provider — wired for Cloudflare R2.
  *
- * NOTE: Client S3 bucket approval and credentials are currently pending.
- * This class provides the production abstraction ready to integrate with AWS SDK / S3-compatible APIs.
+ * Uses @aws-sdk/client-s3 with forcePathStyle=false which is required by R2.
+ * Falls back gracefully with a descriptive error when credentials are missing.
  */
 export class S3StorageService implements IStorageService {
-  private bucket?: string;
-  private region: string;
-  private endpoint?: string;
+  private readonly client: S3Client;
+  private readonly bucket: string;
+  private readonly endpoint: string;
 
   constructor() {
-    this.bucket = config.S3_BUCKET;
-    this.region = config.S3_REGION;
-    this.endpoint = config.S3_ENDPOINT;
-  }
+    const bucket = config.S3_BUCKET;
+    const endpoint = config.S3_ENDPOINT;
+    const accessKeyId = config.S3_ACCESS_KEY_ID;
+    const secretAccessKey = config.S3_SECRET_ACCESS_KEY;
 
-  private ensureConfigured(): void {
-    if (!this.bucket || !config.S3_ACCESS_KEY_ID || !config.S3_SECRET_ACCESS_KEY) {
+    if (!bucket || !endpoint || !accessKeyId || !secretAccessKey) {
       throw AppError.serviceUnavailable(
-        'S3 storage is not configured yet (client credentials pending approval). Use local storage driver.'
+        'S3 storage is not fully configured. Check S3_BUCKET, S3_ENDPOINT, S3_ACCESS_KEY_ID and S3_SECRET_ACCESS_KEY.'
       );
     }
+
+    this.bucket = bucket;
+    this.endpoint = endpoint;
+
+    this.client = new S3Client({
+      region: config.S3_REGION,
+      endpoint,
+      credentials: { accessKeyId, secretAccessKey },
+      // Cloudflare R2 requires virtual-hosted style (forcePathStyle=false)
+      forcePathStyle: false,
+    });
   }
 
   async upload(file: StorageFile, folder = 'general'): Promise<StoredFile> {
-    this.ensureConfigured();
     const ext = path.extname(file.filename) || '.bin';
     const filename = `${randomUUID()}${ext}`;
     const key = `${folder}/${filename}`;
 
-    // AWS SDK PutObjectCommand will be executed here once credentials are provided
-    const url = this.endpoint
-      ? `${this.endpoint}/${this.bucket}/${key}`
-      : `https://${this.bucket}.s3.${this.region}.amazonaws.com/${key}`;
+    await this.client.send(
+      new PutObjectCommand({
+        Bucket: this.bucket,
+        Key: key,
+        Body: file.buffer,
+        ContentType: file.mimeType,
+        ContentLength: file.size,
+      })
+    );
 
     return {
       filename,
-      url,
+      url: this.getUrl(key),
       path: key,
       size: file.size,
       mimeType: file.mimeType,
     };
   }
 
-  async delete(_filePathOrUrl: string): Promise<void> {
-    this.ensureConfigured();
-    // AWS SDK DeleteObjectCommand will be executed here once credentials are provided
+  async delete(filePathOrUrl: string): Promise<void> {
+    // Accept either a full URL or a raw object key
+    let key = filePathOrUrl;
+    if (filePathOrUrl.startsWith('http')) {
+      try {
+        const url = new URL(filePathOrUrl);
+        key = url.pathname.replace(/^\//, '');
+      } catch {
+        // fall through — use as-is
+      }
+    }
+
+    await this.client.send(
+      new DeleteObjectCommand({
+        Bucket: this.bucket,
+        Key: key,
+      })
+    );
   }
 
   getUrl(key: string): string {
     const cleanKey = key.replace(/^[/\\]+/, '');
-    return this.endpoint
-      ? `${this.endpoint}/${this.bucket}/${cleanKey}`
-      : `https://${this.bucket}.s3.${this.region}.amazonaws.com/${cleanKey}`;
+    // R2 public URL format: <endpoint>/<bucket>/<key>
+    return `${this.endpoint}/${this.bucket}/${cleanKey}`;
   }
 }
