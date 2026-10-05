@@ -1,3 +1,5 @@
+/* eslint-disable no-console */
+
 /**
  * test-r2-upload.mjs
  * Quick test: uploads a small PNG to Cloudflare R2 and prints the public URL.
