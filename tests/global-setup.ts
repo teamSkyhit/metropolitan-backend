@@ -8,9 +8,23 @@ import { config as loadEnv } from 'dotenv';
  * .env.test must be a throwaway one: the name has to contain "_test".
  */
 export default function setup(): void {
+  if (process.env.SKIP_DB_MIGRATE === 'true') {
+    return;
+  }
   const env = { ...process.env, ...loadEnv({ path: '.env.test', quiet: true }).parsed };
   if (!env.DATABASE_URL?.includes('_test')) {
     throw new Error('Refusing to run tests against a database whose name does not contain "_test"');
   }
-  execSync('npx prisma migrate deploy', { env, stdio: ['ignore', 'ignore', 'inherit'] });
+  try {
+    execSync('npx prisma migrate deploy', { env, stdio: ['ignore', 'ignore', 'pipe'] });
+  } catch (err: unknown) {
+    const errorMsg = (err as { stderr?: Buffer })?.stderr?.toString() ?? String(err);
+    if (errorMsg.includes('P1001') || errorMsg.includes("Can't reach database server")) {
+      console.warn(
+        '⚠️  Database server unreachable at localhost:5432 — skipping test database migration. Integration tests requiring a live database will fail.'
+      );
+      return;
+    }
+    throw err;
+  }
 }

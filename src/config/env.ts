@@ -82,8 +82,9 @@ const envSchema = z
     STORAGE_LOCAL_DIR: z.string().default('uploads'),
     STORAGE_BASE_URL: z.string().default('/uploads'),
     S3_BUCKET: z.string().optional(),
-    S3_REGION: z.string().default('us-east-1'),
+    S3_REGION: z.string().optional(),
     S3_ENDPOINT: z.string().optional(),
+    S3_PUBLIC_BASE_URL: z.string().optional(),
     S3_ACCESS_KEY_ID: z.string().optional(),
     S3_SECRET_ACCESS_KEY: z.string().optional(),
   })
@@ -96,12 +97,26 @@ const envSchema = z
       });
     }
 
-    if (env.STORAGE_DRIVER === 's3' && !env.S3_BUCKET) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['S3_BUCKET'],
-        message: 'S3_BUCKET is required when STORAGE_DRIVER is s3',
-      });
+    if (env.STORAGE_DRIVER === 's3') {
+      const s3Fields = [
+        ['S3_BUCKET', 'S3_BUCKET is required when STORAGE_DRIVER is s3'],
+        ['S3_REGION', 'S3_REGION is required when STORAGE_DRIVER is s3'],
+        ['S3_ENDPOINT', 'S3_ENDPOINT is required when STORAGE_DRIVER is s3'],
+        ['S3_PUBLIC_BASE_URL', 'S3_PUBLIC_BASE_URL is required when STORAGE_DRIVER is s3'],
+        ['S3_ACCESS_KEY_ID', 'S3_ACCESS_KEY_ID is required when STORAGE_DRIVER is s3'],
+        ['S3_SECRET_ACCESS_KEY', 'S3_SECRET_ACCESS_KEY is required when STORAGE_DRIVER is s3'],
+      ] as const;
+
+      for (const [field, message] of s3Fields) {
+        const val = env[field];
+        if (!val || (typeof val === 'string' && val.trim() === '')) {
+          ctx.addIssue({
+            code: 'custom',
+            path: [field],
+            message,
+          });
+        }
+      }
     }
 
     if (env.APP_ENV === 'local') return;
