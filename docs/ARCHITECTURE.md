@@ -86,3 +86,33 @@ scaling out.
 The Docker image runs `prisma migrate deploy` before starting (`npm run start:migrate`), so deploying a
 build also applies its migrations. The health endpoints serve liveness (`/api/v1/health`) and
 readiness (`/api/v1/health/ready`) probes.
+
+## Object Storage & Cloudflare R2 Integration
+
+Media asset storage is decoupled from the application logic via `IStorageService` (`src/shared/storage/`).
+
+### Drivers
+
+- **Local Driver (`LocalStorageService`)**: Used during local development. Saves uploads to the local filesystem (`STORAGE_LOCAL_DIR=uploads`) and serves them statically at `STORAGE_BASE_URL=/uploads`.
+- **S3 Driver (`S3StorageService`)**: Production-ready S3-compatible driver wired for Cloudflare R2 (`STORAGE_DRIVER=s3`).
+
+### Architecture & Configuration Principles
+
+1. **Endpoint vs. Public Media URL Separation**:
+   - `S3_ENDPOINT`: Private S3-compatible API endpoint used by the AWS SDK client to perform bucket operations (`PutObjectCommand`, `DeleteObjectCommand`). Never exposed to clients.
+   - `S3_PUBLIC_BASE_URL`: Public base URL (e.g. Cloudflare R2 dev domain `https://pub-<hash>.r2.dev` or custom domain `https://media.metropolitan.com`) used exclusively for generating public media URLs.
+   - `getUrl(key)` guarantees `<S3_PUBLIC_BASE_URL>/<key>` without duplicate slashes.
+2. **Region & Virtual-Hosted Addressing**:
+   - `S3_REGION=auto`: Cloudflare R2 requires `auto` as its region setting.
+   - Virtual-hosted style (`forcePathStyle: false`) is enforced as required by Cloudflare R2.
+3. **Deletion Key Derivation**:
+   - `delete(filePathOrUrl)` accepts either a raw storage key (`general/abc.png`) or a full public/endpoint URL.
+   - The service derives the clean object key by stripping `S3_PUBLIC_BASE_URL`, any endpoint prefix, leading slashes, and bucket name prefixes.
+   - The bucket name (e.g. `metropolitan-media`) is never sent as part of the DeleteObject Key.
+4. **Directory Traversal & Path Sanitization**:
+   - Both `LocalStorageService` and `S3StorageService` enforce strict containment:
+     - `upload()` rejects folders containing `..`, absolute paths, or unsafe prefixes.
+     - `delete()` checks containment and safely no-ops on directory traversal attempts (`..`, `/../`) without invoking storage APIs.
+5. **Security & Permissions**:
+   - Cloudflare R2 API tokens must be scoped with `Object Read & Write` permissions on the specified bucket.
+   - `S3_ACCESS_KEY_ID` and `S3_SECRET_ACCESS_KEY` are sensitive credentials. They must never be checked into version control and must be managed via encrypted platform environment secrets.

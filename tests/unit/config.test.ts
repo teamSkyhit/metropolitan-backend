@@ -70,4 +70,56 @@ describe('loadConfig', () => {
       })
     ).toThrow(/weak or default placeholder/);
   });
+
+  describe('STORAGE_DRIVER=s3 validation', () => {
+    const validS3Config = {
+      ...base,
+      STORAGE_DRIVER: 's3' as const,
+      S3_BUCKET: 'metropolitan-media',
+      S3_REGION: 'auto',
+      S3_ENDPOINT: 'https://test-account.r2.cloudflarestorage.com',
+      S3_PUBLIC_BASE_URL: 'https://pub-test.r2.dev',
+      S3_ACCESS_KEY_ID: 'test-key-id',
+      S3_SECRET_ACCESS_KEY: 'test-secret-key',
+    };
+
+    it('loads successfully when all S3 configuration fields are present', () => {
+      const config = loadConfig(validS3Config);
+      expect(config.STORAGE_DRIVER).toBe('s3');
+      expect(config.S3_BUCKET).toBe('metropolitan-media');
+      expect(config.S3_REGION).toBe('auto');
+      expect(config.S3_ENDPOINT).toBe('https://test-account.r2.cloudflarestorage.com');
+      expect(config.S3_PUBLIC_BASE_URL).toBe('https://pub-test.r2.dev');
+      expect(config.S3_ACCESS_KEY_ID).toBe('test-key-id');
+      expect(config.S3_SECRET_ACCESS_KEY).toBe('test-secret-key');
+    });
+
+    const s3RequiredFields = [
+      'S3_BUCKET',
+      'S3_REGION',
+      'S3_ENDPOINT',
+      'S3_PUBLIC_BASE_URL',
+      'S3_ACCESS_KEY_ID',
+      'S3_SECRET_ACCESS_KEY',
+    ] as const;
+
+    for (const field of s3RequiredFields) {
+      it(`fails fast if ${field} is missing when STORAGE_DRIVER=s3`, () => {
+        const invalidConfig = { ...validS3Config };
+        delete (invalidConfig as Record<string, unknown>)[field];
+
+        expect(() => loadConfig(invalidConfig)).toThrow(
+          new RegExp(`${field} is required when STORAGE_DRIVER is s3`)
+        );
+      });
+
+      it(`fails fast if ${field} is empty whitespace when STORAGE_DRIVER=s3`, () => {
+        const invalidConfig = { ...validS3Config, [field]: '   ' };
+
+        expect(() => loadConfig(invalidConfig)).toThrow(
+          new RegExp(`${field} is required when STORAGE_DRIVER is s3`)
+        );
+      });
+    }
+  });
 });

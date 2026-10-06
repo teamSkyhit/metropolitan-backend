@@ -128,10 +128,27 @@ Full request/response contracts: Swagger UI at `/api/docs`.
 
 ### Storage & Media Library
 
-- Default driver: `STORAGE_DRIVER=local` saves uploads to local filesystem under `uploads/` and serves statically from `/uploads`.
-- Directory traversal protection prevents deletion outside the configured storage directory.
-- S3 driver is available via `STORAGE_DRIVER=s3` when `S3_BUCKET` and AWS credentials are provided.
-- Media delete guard (`DELETE /api/v1/media/:id`) returns 409 Conflict if an active product, brand logo/banner, or category banner references the asset.
+- **Drivers**:
+  - `STORAGE_DRIVER=local` (default): Saves uploads to local filesystem under `STORAGE_LOCAL_DIR` (`uploads/`) and serves statically from `STORAGE_BASE_URL` (`/uploads`).
+  - `STORAGE_DRIVER=s3`: S3-compatible object storage provider, optimized for Cloudflare R2 and AWS S3.
+- **Cloudflare R2 Deployment Setup**:
+  - `STORAGE_DRIVER=s3`
+  - `S3_BUCKET`: The R2 bucket name (e.g. `metropolitan-media`).
+  - `S3_REGION=auto`: Cloudflare R2 uses `auto` as the region string (unlike AWS regions such as `us-east-1`).
+  - **S3 API Endpoint vs. Public Media URL**:
+    - `S3_ENDPOINT`: Private S3-compatible API endpoint used by the backend SDK for read/write/delete operations (e.g. `https://<account_id>.r2.cloudflarestorage.com`). The SDK uses virtual-hosted style (`forcePathStyle: false`). This endpoint is strictly internal to the backend and **never** used to construct public URLs.
+    - `S3_PUBLIC_BASE_URL`: Public base URL for serving uploaded assets to clients and browsers (e.g. `https://pub-<hash>.r2.dev` or a custom domain like `https://media.metropolitan.com`). `getUrl()` always constructs `<S3_PUBLIC_BASE_URL>/<key>` safely without duplicate slashes.
+  - **Required Permissions**:
+    - In Cloudflare Dashboard → R2 → Manage R2 API Tokens, create a token with `Object Read & Write` permissions scoped to the target bucket.
+    - Map the generated credentials to `S3_ACCESS_KEY_ID` and `S3_SECRET_ACCESS_KEY`.
+  - **Secret Handling Guidance**:
+    - Never commit real R2 access keys or secret keys to version control.
+    - Store `S3_ACCESS_KEY_ID` and `S3_SECRET_ACCESS_KEY` in environment secrets (e.g. Render, Railway, AWS Secrets Manager, GitHub Secrets).
+    - `.env.example` lists all required storage variables with empty placeholders.
+  - **Path Sanitization & Key Derivation**:
+    - Safe folder/path sanitization rules reject directory traversal (`..`), leading slashes, and absolute escapes on both local and S3 drivers.
+    - `delete()` accepts either a raw storage key or a full public/endpoint URL, correctly deriving the object key and stripping any bucket name prefixes so `metropolitan-media/<key>` is never sent as the DeleteObject key.
+- **Media Delete Guard**: `DELETE /api/v1/media/:id` returns 409 Conflict if an active product, brand logo/banner, or category banner references the asset.
 
 ### Notifications module
 
