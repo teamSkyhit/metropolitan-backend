@@ -83,9 +83,13 @@ scaling out.
 
 ## Deployment
 
-The Docker image runs `prisma migrate deploy` before starting (`npm run start:migrate`), so deploying a
-build also applies its migrations. The health endpoints serve liveness (`/api/v1/health`) and
-readiness (`/api/v1/health/ready`) probes.
+The Docker image runs `npm run start:migrate` on boot: `prisma migrate deploy`, then idempotent
+`npm run db:seed` (first Super Admin when `SEED_SUPER_ADMIN_*` are set), then the API. Health
+endpoints serve liveness (`/api/v1/health`) and readiness (`/api/v1/health/ready`) probes.
+
+Staging deploys from `develop` via GitHub Actions → Railway (`deploy-railway.yml`). Requires GitHub
+secret `RAILWAY_TOKEN`, variable `RAILWAY_SERVICE`, and Railway service variables including seed
+credentials for the first boot only.
 
 ## Object Storage & Cloudflare R2 Integration
 
