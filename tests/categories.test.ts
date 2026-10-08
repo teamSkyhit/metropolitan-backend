@@ -959,6 +959,24 @@ describe('DELETE /api/v1/categories/:id & Restore', () => {
     expect(parentInDb.deletedAt).not.toBeNull();
   });
 
+  it('atomically blocks delete with 409 CATEGORIES_HAS_CHILDREN if child category is added before soft-delete (TOCTOU safe)', async () => {
+    const parent = await api().post('/api/v1/categories').set(admin.auth).send(sampleCategory).expect(201);
+    const parentId = parent.body.data.id;
+
+    // Simulate concurrent child category creation
+    await api()
+      .post('/api/v1/categories')
+      .set(admin.auth)
+      .send({ name: 'Race Child', slug: 'race-child', parentId })
+      .expect(201);
+
+    const res = await api().delete(`/api/v1/categories/${parentId}`).set(admin.auth).expect(409);
+    expect(res.body.error.code).toBe(CategoriesErrorCode.HAS_CHILDREN);
+
+    const parentInDb = await prisma.category.findUniqueOrThrow({ where: { id: parentId } });
+    expect(parentInDb.deletedAt).toBeNull();
+  });
+
   it('allows deletion of category with no children and no products', async () => {
     const leafCategory = await api()
       .post('/api/v1/categories')

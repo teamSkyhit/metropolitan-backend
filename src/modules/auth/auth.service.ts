@@ -3,6 +3,7 @@ import { config } from '../../config/env';
 import { AppError } from '../../shared/errors';
 import {
   generateOpaqueToken,
+  hashPassword,
   hashToken,
   verifyAgainstDummyHash,
   verifyPassword,
@@ -141,8 +142,7 @@ export const authService = {
 
   /** Signs the user out on every device: access tokens die immediately, refresh tokens are revoked. */
   async logoutEverywhere(userId: string): Promise<void> {
-    await usersService.revokeAllTokens(userId);
-    await authRepository.revokeAllForUser(userId);
+    await authRepository.logoutEverywhere(userId);
   },
 
   async me(userId: string): Promise<UserDto> {
@@ -161,8 +161,31 @@ export const authService = {
       throw AppError.badRequest('Current password is incorrect', AuthErrorCode.INVALID_CURRENT_PASSWORD);
     }
 
-    const updated = await usersService.changeOwnPassword(userId, body.newPassword);
-    await authRepository.revokeAllForUser(userId);
-    return { user: toUserDto(updated), tokens: await issueTokens(updated, client) };
+    const newPasswordHash = await hashPassword(body.newPassword);
+    const newRefreshToken = generateOpaqueToken();
+    const expiresAt = new Date(Date.now() + config.REFRESH_TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000);
+
+    const { updatedUser } = await authRepository.changePasswordTransaction(userId, newPasswordHash, {
+      familyId: randomUUID(),
+      tokenHash: hashToken(newRefreshToken),
+      expiresAt,
+      createdByIp: client.ip?.slice(0, 64),
+      userAgent: client.userAgent?.slice(0, 512),
+    });
+
+    const access = signAccessToken({
+      userId: updatedUser.id,
+      tokenVersion: updatedUser.tokenVersion,
+    });
+
+    return {
+      user: toUserDto(updatedUser),
+      tokens: {
+        accessToken: access.token,
+        accessTokenExpiresIn: access.expiresIn,
+        refreshToken: newRefreshToken,
+        refreshTokenExpiresAt: expiresAt.toISOString(),
+      },
+    };
   },
 };

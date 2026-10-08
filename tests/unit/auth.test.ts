@@ -197,3 +197,73 @@ describe('authService.login (unit)', () => {
     expect(findSpy).toHaveBeenCalledWith('alice@metro.test');
   });
 });
+
+describe('authService multi-write transactions (unit)', () => {
+  const dummyUser = {
+    id: 'user-uuid-1',
+    name: 'Alice Admin',
+    email: 'alice@metro.test',
+    role: Role.SUPER_ADMIN,
+    passwordHash: '$2a$12$DummyHashedPasswordForTest00000000000000000000000000000',
+    isActive: true,
+    mustChangePassword: false,
+    failedLoginAttempts: 0,
+    lockedUntil: null as Date | null,
+    passwordChangedAt: new Date(),
+    tokenVersion: 1,
+    lastLoginAt: null,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    deletedAt: null,
+    createdById: null,
+    updatedById: null,
+  };
+
+  const clientInfo = { ip: '127.0.0.1', userAgent: 'test-agent' };
+
+  it('logoutEverywhere delegates to authRepository.logoutEverywhere atomically', async () => {
+    const logoutSpy = vi.spyOn(authRepository, 'logoutEverywhere').mockResolvedValue(undefined);
+
+    await authService.logoutEverywhere('user-uuid-1');
+
+    expect(logoutSpy).toHaveBeenCalledWith('user-uuid-1');
+  });
+
+  it('changePassword delegates to authRepository.changePasswordTransaction atomically', async () => {
+    vi.spyOn(usersService, 'findRecordById').mockResolvedValue(dummyUser);
+    vi.spyOn(passwordModule, 'verifyPassword').mockResolvedValue(true);
+    const txSpy = vi.spyOn(authRepository, 'changePasswordTransaction').mockResolvedValue({
+      updatedUser: { ...dummyUser, tokenVersion: 2 },
+      newRefreshToken: {
+        id: 'new-token-id',
+        userId: dummyUser.id,
+        familyId: 'new-family',
+        tokenHash: 'hash',
+        tokenVersion: 2,
+        expiresAt: new Date(),
+        revokedAt: null,
+        createdByIp: '127.0.0.1',
+        userAgent: 'test-agent',
+        createdAt: new Date(),
+      },
+    });
+
+    const session = await authService.changePassword(
+      dummyUser.id,
+      { currentPassword: 'OldPassword123', newPassword: 'NewPassword123' },
+      clientInfo
+    );
+
+    expect(txSpy).toHaveBeenCalledWith(
+      dummyUser.id,
+      expect.any(String),
+      expect.objectContaining({
+        createdByIp: clientInfo.ip,
+        userAgent: clientInfo.userAgent,
+      })
+    );
+    expect(session.user.id).toBe(dummyUser.id);
+    expect(session.tokens.accessToken).toBeDefined();
+    expect(session.tokens.refreshToken).toBeDefined();
+  });
+});

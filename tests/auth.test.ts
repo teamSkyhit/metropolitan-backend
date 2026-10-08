@@ -1,5 +1,5 @@
-import { Role as PrismaRole } from '@prisma/client';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { type Prisma, Role as PrismaRole } from '@prisma/client';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { Role } from '../src/shared/security/roles';
 import { api } from './helpers/app';
 import { createUser, DEFAULT_PASSWORD, signInAs } from './helpers/auth';
@@ -200,6 +200,32 @@ describe('POST /auth/logout-all', () => {
       .send({ refreshToken: second.body.data.tokens.refreshToken })
       .expect(401);
   });
+
+  it('rolls back completely if token revocation fails during logout-all', async () => {
+    const session = await signInAs('SALES_MANAGER');
+    const userBefore = await prisma.user.findUniqueOrThrow({ where: { id: session.user.id } });
+
+    const origTransaction = prisma.$transaction.bind(prisma);
+    const txSpy = vi.spyOn(prisma, '$transaction').mockImplementation(((
+      arg: (tx: Prisma.TransactionClient) => Promise<unknown>,
+      options?: unknown
+    ) => {
+      return origTransaction(async (tx: Prisma.TransactionClient) => {
+        vi.spyOn(tx.refreshToken, 'updateMany').mockRejectedValueOnce(new Error('Simulated DB failure'));
+        return arg(tx);
+      }, options as never);
+    }) as never);
+
+    await api().post('/api/v1/auth/logout-all').set(session.auth).expect(500);
+
+    txSpy.mockRestore();
+
+    const userAfter = await prisma.user.findUniqueOrThrow({ where: { id: session.user.id } });
+    expect(userAfter.tokenVersion).toBe(userBefore.tokenVersion);
+
+    await api().get('/api/v1/auth/me').set(session.auth).expect(200);
+    await api().post('/api/v1/auth/refresh').send({ refreshToken: session.refreshToken }).expect(200);
+  });
 });
 
 describe('GET /auth/me', () => {
@@ -260,5 +286,39 @@ describe('POST /auth/change-password', () => {
       .set(session.auth)
       .send({ currentPassword: DEFAULT_PASSWORD, newPassword: 'short' })
       .expect(400);
+  });
+
+  it('rolls back password update and token revocation if session token creation fails', async () => {
+    const session = await signInAs('SALES_MANAGER');
+    const userBefore = await prisma.user.findUniqueOrThrow({ where: { id: session.user.id } });
+
+    const origTransaction = prisma.$transaction.bind(prisma);
+    const txSpy = vi.spyOn(prisma, '$transaction').mockImplementation(((
+      arg: (tx: Prisma.TransactionClient) => Promise<unknown>,
+      options?: unknown
+    ) => {
+      return origTransaction(async (tx: Prisma.TransactionClient) => {
+        vi.spyOn(tx.refreshToken, 'create').mockRejectedValueOnce(
+          new Error('Simulated token create failure')
+        );
+        return arg(tx);
+      }, options as never);
+    }) as never);
+
+    await api()
+      .post('/api/v1/auth/change-password')
+      .set(session.auth)
+      .send({ currentPassword: DEFAULT_PASSWORD, newPassword: 'N3wPasswordX' })
+      .expect(500);
+
+    txSpy.mockRestore();
+
+    const userAfter = await prisma.user.findUniqueOrThrow({ where: { id: session.user.id } });
+    expect(userAfter.passwordHash).toBe(userBefore.passwordHash);
+    expect(userAfter.tokenVersion).toBe(userBefore.tokenVersion);
+
+    await api().get('/api/v1/auth/me').set(session.auth).expect(200);
+    await login(session.user.email, DEFAULT_PASSWORD).expect(200);
+    await login(session.user.email, 'N3wPasswordX').expect(401);
   });
 });

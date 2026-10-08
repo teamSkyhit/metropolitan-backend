@@ -219,14 +219,6 @@ export const categoriesService = {
     const existing = await categoriesRepository.findById(id);
     if (!existing) throw AppError.notFound('Category');
 
-    const hasLiveChildren = await categoriesRepository.hasLiveChildren(id);
-    if (hasLiveChildren) {
-      throw AppError.conflict(
-        'Category cannot be deleted while it has active child categories.',
-        CategoriesErrorCode.HAS_CHILDREN
-      );
-    }
-
     const hasLiveProducts = await productReferenceService.hasLiveProductsForCategory(id);
     if (hasLiveProducts) {
       throw AppError.conflict(

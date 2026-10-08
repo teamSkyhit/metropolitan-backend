@@ -1,4 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { AppError } from '../../src/shared/errors';
 import { CategoriesErrorCode } from '../../src/modules/categories/categories.schema';
 import { categoriesRepository } from '../../src/modules/categories/categories.repository';
 import { categoriesService } from '../../src/modules/categories/categories.service';
@@ -37,10 +38,15 @@ describe('categoriesService.softDelete (unit)', () => {
     );
   });
 
-  it('blocks deletion and returns 409 CATEGORIES_HAS_CHILDREN when live children exist', async () => {
+  it('blocks deletion and returns 409 CATEGORIES_HAS_CHILDREN when live children exist (atomic repository guard)', async () => {
     vi.spyOn(categoriesRepository, 'findById').mockResolvedValue(dummyCategory);
-    vi.spyOn(categoriesRepository, 'hasLiveChildren').mockResolvedValue(true);
-    const softDeleteSpy = vi.spyOn(categoriesRepository, 'softDelete').mockResolvedValue(dummyCategory);
+    vi.spyOn(productReferenceService, 'hasLiveProductsForCategory').mockResolvedValue(false);
+    vi.spyOn(categoriesRepository, 'softDelete').mockRejectedValue(
+      AppError.conflict(
+        'Category cannot be deleted while it has active child categories.',
+        CategoriesErrorCode.HAS_CHILDREN
+      )
+    );
 
     await expect(categoriesService.softDelete(dummyCategory.id, 'actor-1')).rejects.toThrow(
       expect.objectContaining({
@@ -49,14 +55,17 @@ describe('categoriesService.softDelete (unit)', () => {
         message: 'Category cannot be deleted while it has active child categories.',
       })
     );
-
-    expect(softDeleteSpy).not.toHaveBeenCalled();
   });
 
   it('blocks deletion and returns 409 when multiple live children exist', async () => {
     vi.spyOn(categoriesRepository, 'findById').mockResolvedValue(dummyCategory);
-    vi.spyOn(categoriesRepository, 'hasLiveChildren').mockResolvedValue(true);
-    const softDeleteSpy = vi.spyOn(categoriesRepository, 'softDelete').mockResolvedValue(dummyCategory);
+    vi.spyOn(productReferenceService, 'hasLiveProductsForCategory').mockResolvedValue(false);
+    vi.spyOn(categoriesRepository, 'softDelete').mockRejectedValue(
+      AppError.conflict(
+        'Category cannot be deleted while it has active child categories.',
+        CategoriesErrorCode.HAS_CHILDREN
+      )
+    );
 
     await expect(categoriesService.softDelete(dummyCategory.id, 'actor-1')).rejects.toThrow(
       expect.objectContaining({
@@ -64,8 +73,6 @@ describe('categoriesService.softDelete (unit)', () => {
         code: CategoriesErrorCode.HAS_CHILDREN,
       })
     );
-
-    expect(softDeleteSpy).not.toHaveBeenCalled();
   });
 
   it('blocks deletion and returns 409 CATEGORIES_HAS_PRODUCTS when live products exist', async () => {
