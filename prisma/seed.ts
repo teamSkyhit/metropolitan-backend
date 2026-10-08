@@ -3,18 +3,33 @@
  * Super Admin already exists. There is no public sign-up; every other user is
  * created by a Super Admin through the API.
  *
+ * Self-contained (no `src/` imports) so it can run inside the production Docker
+ * image with Node's type stripper — no `tsx` required:
+ *
  *   SEED_SUPER_ADMIN_EMAIL=... SEED_SUPER_ADMIN_PASSWORD=... npm run db:seed
  *
- * Remove SEED_SUPER_ADMIN_PASSWORD from the environment after the first run.
+ * Password policy matches the API: 10–64 chars, at least one letter and one digit.
+ * Remove SEED_SUPER_ADMIN_PASSWORD from the environment after the first successful run.
  */
+import { PrismaClient } from '@prisma/client';
+import bcrypt from 'bcryptjs';
 import { z } from 'zod';
-import { prisma } from '../src/config/database';
-import { hashPassword, passwordSchema } from '../src/shared/security/password';
+
+const prisma = new PrismaClient();
+
+const passwordSchema = z
+  .string()
+  .min(10, 'Password must be at least 10 characters')
+  .max(64, 'Password must be at most 64 characters')
+  .refine((value) => Buffer.byteLength(value, 'utf8') <= 72, 'Password is too long')
+  .refine((value) => /[A-Za-z]/.test(value), 'Password must contain a letter')
+  .refine((value) => /\d/.test(value), 'Password must contain a digit');
 
 const seedEnv = z.object({
   SEED_SUPER_ADMIN_NAME: z.string().trim().min(2).max(100).default('Super Admin'),
   SEED_SUPER_ADMIN_EMAIL: z.email().trim().toLowerCase(),
   SEED_SUPER_ADMIN_PASSWORD: passwordSchema,
+  BCRYPT_ROUNDS: z.coerce.number().int().min(4).max(15).default(12),
 });
 
 async function main(): Promise<void> {
@@ -27,18 +42,20 @@ async function main(): Promise<void> {
   const parsed = seedEnv.safeParse(process.env);
   if (!parsed.success) {
     console.error('Cannot create the Super Admin. Fix these environment variables:');
-    for (const issue of parsed.error.issues) console.error(`  - ${issue.path.join('.')}: ${issue.message}`);
+    for (const issue of parsed.error.issues) {
+      console.error(`  - ${issue.path.join('.')}: ${issue.message}`);
+    }
     process.exitCode = 1;
     return;
   }
 
-  const { SEED_SUPER_ADMIN_NAME: name, SEED_SUPER_ADMIN_EMAIL: email } = parsed.data;
+  const { SEED_SUPER_ADMIN_NAME: name, SEED_SUPER_ADMIN_EMAIL: email, BCRYPT_ROUNDS } = parsed.data;
   const user = await prisma.user.create({
     data: {
       name,
       email,
       role: 'SUPER_ADMIN',
-      passwordHash: await hashPassword(parsed.data.SEED_SUPER_ADMIN_PASSWORD),
+      passwordHash: await bcrypt.hash(parsed.data.SEED_SUPER_ADMIN_PASSWORD, BCRYPT_ROUNDS),
     },
   });
   console.log(`Super Admin created: ${user.email} (${user.id})`);

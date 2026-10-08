@@ -233,4 +233,23 @@ automatically. The database name must contain `_test`, because tests empty its t
 docker compose up --build
 ```
 
-The image applies pending migrations on start (`npm run start:migrate`).
+The image runs `npm run start:migrate` on boot: `prisma migrate deploy` → `npm run db:seed` (idempotent Super Admin) → API. Set `SEED_SUPER_ADMIN_EMAIL` / `SEED_SUPER_ADMIN_PASSWORD` (min 10 chars, letter + digit) for the first boot.
+
+## Railway (staging from `develop`)
+
+GitHub Actions workflow [`.github/workflows/deploy-railway.yml`](.github/workflows/deploy-railway.yml) deploys on every push to `develop` (and via **workflow_dispatch**).
+
+### One-time GitHub setup
+
+1. In Railway → Project → **Settings → Tokens** → create a **project token** for the staging environment.
+2. In GitHub → repo **Settings → Secrets and variables → Actions**:
+   - Secret `RAILWAY_TOKEN` = that project token
+   - Variable `RAILWAY_SERVICE` = backend service name or ID
+3. In Railway → backend service → **Variables**, set at least:
+   - All app env vars from `.env.example` for staging (`APP_ENV=staging`, `DATABASE_URL`, JWT, CORS, captcha, etc.)
+   - `SEED_SUPER_ADMIN_NAME=Super Admin`
+   - `SEED_SUPER_ADMIN_EMAIL=<your admin email>`
+   - `SEED_SUPER_ADMIN_PASSWORD=<10+ chars, letter + digit>`
+4. After the first successful deploy creates the Super Admin, **remove `SEED_SUPER_ADMIN_PASSWORD`** from Railway variables (seed will no-op while an admin exists).
+
+Seed runs **inside Railway** on container start (not on the GitHub runner). Do not commit seed passwords to git.

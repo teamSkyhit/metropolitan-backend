@@ -31,5 +31,6 @@ EXPOSE 5000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||5000)+'/api/v1/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
-# Applies pending migrations, then starts the API.
+# Applies pending migrations, seeds the first Super Admin (idempotent), then starts the API.
+# Set SEED_SUPER_ADMIN_EMAIL + SEED_SUPER_ADMIN_PASSWORD on the host for the first boot.
 CMD ["npm", "run", "start:migrate"]
