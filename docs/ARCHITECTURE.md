@@ -94,9 +94,9 @@ The Docker image runs `npm run start:migrate` on boot: `prisma migrate deploy`, 
 `npm run db:seed` (first Super Admin when `SEED_SUPER_ADMIN_*` are set), then the API. Health
 endpoints serve liveness (`/api/v1/health`) and readiness (`/api/v1/health/ready`) probes.
 
-Staging deploys from `develop` via GitHub Actions → Railway (`deploy-railway.yml`). Requires GitHub
-secret `RAILWAY_TOKEN`, variable `RAILWAY_SERVICE`, and Railway service variables including seed
-credentials for the first boot only.
+Staging deploys from `develop` via Railway’s GitHub integration (service connected to branch
+`develop`). Seed credentials (`SEED_SUPER_ADMIN_*`) are Railway service variables for the first
+boot only — no GitHub Actions deploy token is required.
 
 ## Object Storage & Cloudflare R2 Integration
 

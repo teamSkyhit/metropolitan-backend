@@ -237,19 +237,28 @@ The image runs `npm run start:migrate` on boot: `prisma migrate deploy` → `npm
 
 ## Railway (staging from `develop`)
 
-GitHub Actions workflow [`.github/workflows/deploy-railway.yml`](.github/workflows/deploy-railway.yml) deploys on every push to `develop` (and via **workflow_dispatch**).
+Staging uses **Railway’s GitHub integration** (no project token / GitHub Actions deploy required).
 
-### One-time GitHub setup
+### One-time Railway setup
 
-1. In Railway → Project → **Settings → Tokens** → create a **project token** for the staging environment.
-2. In GitHub → repo **Settings → Secrets and variables → Actions**:
-   - Secret `RAILWAY_TOKEN` = that project token
-   - Optional variable `RAILWAY_SERVICE` = service name or ID (defaults to `thorough-victory` / ID `f7a3da41-0e99-47fc-a312-303df610ba1e`)
-3. In Railway → backend service → **Variables**, set at least:
-   - All app env vars from `.env.example` for staging (`APP_ENV=staging`, `DATABASE_URL`, JWT, CORS, captcha, etc.)
+1. Open service **`thorough-victory`** (ID `f7a3da41-0e99-47fc-a312-303df610ba1e`).
+2. **Settings → Source**
+   - Connect the GitHub repo `teamSkyhit/metropolitan-backend` (authorize Railway if prompted).
+   - **Branch:** `develop`
+   - Enable **Wait for CI** only if you want green CI before deploy (optional).
+   - Ensure auto-deploy on push is enabled for that branch.
+3. **Settings → Deploy / Build**
+   - Builder: Dockerfile (repo root `Dockerfile`), or Railway’s detected Node build if you already use that.
+   - Start command should remain the image default: `npm run start:migrate`  
+     (`prisma migrate deploy` → `npm run db:seed` → `node dist/server.js`).
+4. **Variables** (service or shared env), set at least:
+   - Staging app config from `.env.example` (`APP_ENV=staging`, `DATABASE_URL`, JWT, CORS, captcha, etc.)
    - `SEED_SUPER_ADMIN_NAME=Super Admin`
    - `SEED_SUPER_ADMIN_EMAIL=<your admin email>`
-   - `SEED_SUPER_ADMIN_PASSWORD=<10+ chars, letter + digit>`
-4. After the first successful deploy creates the Super Admin, **remove `SEED_SUPER_ADMIN_PASSWORD`** from Railway variables (seed will no-op while an admin exists).
+   - `SEED_SUPER_ADMIN_PASSWORD=<10+ chars, letter + digit>`  
+     (`Test@1234` is too short — use e.g. `Test@12345`.)
+5. Trigger a deploy (push to `develop`, or **Deploy** in the Railway UI).
+6. Check deploy logs for `Super Admin created: …` (or “already exists”).
+7. After the first successful seed, **remove `SEED_SUPER_ADMIN_PASSWORD`** from Railway variables.
 
-Seed runs **inside Railway** on container start (not on the GitHub runner). Do not commit seed passwords to git.
+Do not commit seed passwords to git. Account API tokens are not needed for this path.
