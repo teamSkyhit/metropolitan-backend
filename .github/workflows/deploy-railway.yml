@@ -17,7 +17,8 @@ jobs:
     container: ghcr.io/railwayapp/cli:latest
     env:
       RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-      RAILWAY_SERVICE: ${{ vars.RAILWAY_SERVICE }}
+      # Prefer GitHub Actions variable when set; otherwise the known staging service.
+      RAILWAY_SERVICE: ${{ vars.RAILWAY_SERVICE || 'thorough-victory' }}
 
     steps:
       - uses: actions/checkout@v4
@@ -29,9 +30,10 @@ jobs:
             exit 1
           fi
           if [ -z "$RAILWAY_SERVICE" ]; then
-            echo "::error::Missing GitHub variable RAILWAY_SERVICE (Railway service name or ID)."
+            echo "::error::Missing Railway service name."
             exit 1
           fi
+          echo "Deploying to Railway service: $RAILWAY_SERVICE"
 
       - name: Deploy to Railway
         run: railway up --ci --detach --service "$RAILWAY_SERVICE"

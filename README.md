@@ -244,7 +244,7 @@ GitHub Actions workflow [`.github/workflows/deploy-railway.yml`](.github/workflo
 1. In Railway → Project → **Settings → Tokens** → create a **project token** for the staging environment.
 2. In GitHub → repo **Settings → Secrets and variables → Actions**:
    - Secret `RAILWAY_TOKEN` = that project token
-   - Variable `RAILWAY_SERVICE` = backend service name or ID
+   - Optional variable `RAILWAY_SERVICE` = service name or ID (defaults to `thorough-victory` / ID `f7a3da41-0e99-47fc-a312-303df610ba1e`)
 3. In Railway → backend service → **Variables**, set at least:
    - All app env vars from `.env.example` for staging (`APP_ENV=staging`, `DATABASE_URL`, JWT, CORS, captcha, etc.)
    - `SEED_SUPER_ADMIN_NAME=Super Admin`
