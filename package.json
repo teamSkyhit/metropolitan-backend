@@ -24,7 +24,7 @@
     "db:studio": "prisma studio",
     "start:migrate": "prisma migrate deploy && npm run db:seed && node dist/server.js",
     "check": "npm run lint && npm run format:check && npm run typecheck && npm test",
-    "db:seed": "node --experimental-strip-types prisma/seed.ts"
+    "db:seed": "node prisma/seed.mjs"
   },
   "keywords": [
     "crm",

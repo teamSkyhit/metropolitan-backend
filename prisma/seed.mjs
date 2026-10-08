@@ -3,13 +3,16 @@
  * Super Admin already exists. There is no public sign-up; every other user is
  * created by a Super Admin through the API.
  *
- * Self-contained (no `src/` imports) so it can run inside the production Docker
- * image with Node's type stripper — no `tsx` required:
+ * Plain ESM so it runs in the production Docker image with `node prisma/seed.mjs`
+ * (no tsx / type-stripping / package.json "type" required):
  *
  *   SEED_SUPER_ADMIN_EMAIL=... SEED_SUPER_ADMIN_PASSWORD=... npm run db:seed
  *
  * Password policy matches the API: 10–64 chars, at least one letter and one digit.
  * Remove SEED_SUPER_ADMIN_PASSWORD from the environment after the first successful run.
+ *
+ * If no Super Admin exists and seed env vars are missing, the seed skips with a
+ * warning and exit 0 so migrate/boot can continue — set the vars and redeploy.
  */
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
@@ -32,10 +35,19 @@ const seedEnv = z.object({
   BCRYPT_ROUNDS: z.coerce.number().int().min(4).max(15).default(12),
 });
 
-async function main(): Promise<void> {
+async function main() {
   const existing = await prisma.user.findFirst({ where: { role: 'SUPER_ADMIN', deletedAt: null } });
   if (existing) {
     console.log(`A Super Admin already exists (${existing.email}). Nothing to do.`);
+    return;
+  }
+
+  const emailSet = Boolean(process.env.SEED_SUPER_ADMIN_EMAIL?.trim());
+  const passwordSet = Boolean(process.env.SEED_SUPER_ADMIN_PASSWORD?.trim());
+  if (!emailSet || !passwordSet) {
+    console.warn(
+      'No Super Admin exists and SEED_SUPER_ADMIN_EMAIL / SEED_SUPER_ADMIN_PASSWORD are not set. Skipping seed so the API can start. Set those Railway variables (password min 10 chars) and redeploy to create the first Super Admin.'
+    );
     return;
   }
 
