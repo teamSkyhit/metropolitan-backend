@@ -30,6 +30,34 @@ export const authRepository = {
     return count === 1;
   },
 
+  /**
+   * Atomically revokes the old refresh token (only if active) and creates the new one in a single transaction.
+   * Returns null if the old token was already rotated/revoked concurrently.
+   */
+  async rotateRefreshToken(
+    oldTokenId: string,
+    newTokenData: {
+      userId: string;
+      familyId: string;
+      tokenHash: string;
+      tokenVersion: number;
+      expiresAt: Date;
+      createdByIp?: string;
+      userAgent?: string;
+    }
+  ): Promise<RefreshToken | null> {
+    return prisma.$transaction(async (tx) => {
+      const { count } = await tx.refreshToken.updateMany({
+        where: { id: oldTokenId, revokedAt: null },
+        data: { revokedAt: new Date() },
+      });
+      if (count !== 1) {
+        return null;
+      }
+      return tx.refreshToken.create({ data: newTokenData });
+    });
+  },
+
   async revokeFamily(familyId: string): Promise<void> {
     await prisma.refreshToken.updateMany({
       where: { familyId, revokedAt: null },

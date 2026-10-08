@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { Prisma } from '@prisma/client';
+import { translatePrismaUniqueError } from '../../shared/database';
 import { AppError } from '../../shared/errors';
 import { buildPaginationMeta, type Paginated } from '../../shared/http';
 import { storageService, UPLOAD_LIMITS, validateFileSize, validateImageContent } from '../../shared/storage';
@@ -14,19 +14,19 @@ import {
   type UpdateCategoryBody,
 } from './categories.schema';
 
-function handlePrismaUniqueError(err: unknown): void {
-  if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
-    const target = Array.isArray(err.meta?.target)
-      ? err.meta.target.join(',')
-      : String(err.meta?.target ?? '');
-    if (target.includes('name_key') || target.includes('name')) {
-      throw AppError.conflict('A category with this name already exists', CategoriesErrorCode.NAME_TAKEN);
-    }
-    if (target.includes('slug')) {
-      throw AppError.conflict('A category with this slug already exists', CategoriesErrorCode.SLUG_TAKEN);
-    }
-    throw AppError.conflict('A record with the same unique value already exists');
-  }
+function handleCategoryUniqueError(err: unknown): never {
+  translatePrismaUniqueError(err, [
+    {
+      fieldSubstring: 'name',
+      errorCode: CategoriesErrorCode.NAME_TAKEN,
+      errorMessage: 'A category with this name already exists',
+    },
+    {
+      fieldSubstring: 'slug',
+      errorCode: CategoriesErrorCode.SLUG_TAKEN,
+      errorMessage: 'A category with this slug already exists',
+    },
+  ]);
 }
 
 /** Maps database record to Admin DTO. */
@@ -163,8 +163,7 @@ export const categoriesService = {
       const record = await categoriesRepository.create(body, actorId);
       return toCategoryDto(record);
     } catch (err) {
-      handlePrismaUniqueError(err);
-      throw err;
+      handleCategoryUniqueError(err);
     }
   },
 
@@ -186,8 +185,7 @@ export const categoriesService = {
       const updated = await categoriesRepository.update(id, body, actorId);
       return toCategoryDto(updated);
     } catch (err) {
-      handlePrismaUniqueError(err);
-      throw err;
+      handleCategoryUniqueError(err);
     }
   },
 
@@ -208,12 +206,26 @@ export const categoriesService = {
         options?.unavailableCode ?? 'PRODUCTS_CATEGORY_UNAVAILABLE'
       );
     }
+    if (!category.isActive) {
+      throw AppError.badRequest(
+        'Cannot assign an inactive category to product',
+        options?.unavailableCode ?? 'PRODUCTS_CATEGORY_UNAVAILABLE'
+      );
+    }
     return category;
   },
 
   async softDelete(id: string, actorId: string): Promise<void> {
     const existing = await categoriesRepository.findById(id);
     if (!existing) throw AppError.notFound('Category');
+
+    const hasLiveChildren = await categoriesRepository.hasLiveChildren(id);
+    if (hasLiveChildren) {
+      throw AppError.conflict(
+        'Category cannot be deleted while it has active child categories.',
+        CategoriesErrorCode.HAS_CHILDREN
+      );
+    }
 
     const hasLiveProducts = await productReferenceService.hasLiveProductsForCategory(id);
     if (hasLiveProducts) {

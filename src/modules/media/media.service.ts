@@ -57,7 +57,12 @@ export const mediaService = {
     return items.map(toMediaDto);
   },
 
-  async upload(file: Express.Multer.File, actorId: string | null): Promise<MediaDto> {
+  async upload(
+    file:
+      | Express.Multer.File
+      | { buffer: Buffer; size: number; originalname?: string; filename?: string; mimetype?: string },
+    actorId: string | null
+  ): Promise<MediaDto> {
     validateFileSize(file.size, UPLOAD_LIMITS.PRODUCT_IMAGE_MAX_BYTES, 'Media file');
     const validated = validateImageContent(file.buffer);
 
@@ -71,19 +76,23 @@ export const mediaService = {
       'media'
     );
 
+    const originalFileName =
+      ('originalname' in file && file.originalname ? file.originalname : '') || stored.filename;
+
     const record = await mediaRepository.create({
-      fileName: file.originalname?.trim() || stored.filename,
+      fileName: originalFileName.trim() || stored.filename,
       storageKey: stored.path,
       publicUrl: stored.url,
       mimeType: validated.mimeType,
       fileSize: file.size,
       uploadedById: actorId,
+      actorId,
     });
 
     return toMediaDto(record);
   },
 
-  async remove(id: string): Promise<void> {
+  async remove(id: string, actorId: string | null = null): Promise<void> {
     const record = await mediaRepository.findById(id);
     if (!record) throw AppError.notFound('Media');
 
@@ -98,7 +107,7 @@ export const mediaService = {
       }
     }
 
-    await mediaRepository.softDelete(id);
+    await mediaRepository.softDelete(id, actorId);
     await storageService.delete(record.storageKey).catch(() => {});
   },
 };

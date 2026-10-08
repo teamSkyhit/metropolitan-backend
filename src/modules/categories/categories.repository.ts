@@ -91,6 +91,18 @@ export const categoriesRepository = {
       .then((count) => count > 0);
   },
 
+  /** Checks if any direct live child categories exist for the given parent category id. */
+  hasLiveChildren(parentId: string): Promise<boolean> {
+    return prisma.category
+      .count({
+        where: {
+          parentId,
+          ...notDeleted,
+        },
+      })
+      .then((count) => count > 0);
+  },
+
   async findMany(query: ListCategoriesQuery): Promise<{ items: Category[]; total: number }> {
     const where: Prisma.CategoryWhereInput = {
       ...notDeleted,

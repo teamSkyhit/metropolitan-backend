@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { Prisma } from '@prisma/client';
+import { translatePrismaUniqueError } from '../../shared/database';
 import { AppError } from '../../shared/errors';
 import { brandsService } from '../brands';
 import { categoriesService } from '../categories';
@@ -26,13 +26,13 @@ import {
 } from './homepage.schema';
 
 function handleHomepageUniqueError(err: unknown, sectionType: string): never {
-  if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
-    throw AppError.conflict(
-      `An active ${sectionType} section already exists. Disable or update the existing section.`,
-      HomepageErrorCode.SECTION_DUPLICATE
-    );
-  }
-  throw err;
+  translatePrismaUniqueError(err, [
+    {
+      fieldSubstring: '',
+      errorCode: HomepageErrorCode.SECTION_DUPLICATE,
+      errorMessage: `An active ${sectionType} section already exists. Disable or update the existing section.`,
+    },
+  ]);
 }
 
 export function toHomepageSectionDto(record: HomepageSectionRecord): HomepageSectionDto {

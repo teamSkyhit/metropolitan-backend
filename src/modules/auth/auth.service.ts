@@ -50,9 +50,18 @@ async function issueTokens(
 
 export const authService = {
   async login({ email, password }: LoginBody, client: ClientInfo): Promise<SessionDto> {
-    const user = await usersService.findForSignIn(email);
+    const normalizedEmail = email.trim().toLowerCase();
+    const user = await usersService.findForSignIn(normalizedEmail);
     if (!user) {
       await verifyAgainstDummyHash(password);
+      throw AppError.unauthorized('Invalid email or password', AuthErrorCode.INVALID_CREDENTIALS);
+    }
+
+    const isPasswordValid = await verifyPassword(password, user.passwordHash);
+    if (!isPasswordValid) {
+      if (!user.lockedUntil || user.lockedUntil <= new Date()) {
+        await usersService.recordFailedLogin(user.id);
+      }
       throw AppError.unauthorized('Invalid email or password', AuthErrorCode.INVALID_CREDENTIALS);
     }
 
@@ -62,11 +71,6 @@ export const authService = {
         AuthErrorCode.ACCOUNT_LOCKED,
         'Too many failed sign-in attempts. Try again later or ask an administrator to reset your password.'
       );
-    }
-
-    if (!(await verifyPassword(password, user.passwordHash))) {
-      await usersService.recordFailedLogin(user.id);
-      throw AppError.unauthorized('Invalid email or password', AuthErrorCode.INVALID_CREDENTIALS);
     }
 
     if (!user.isActive) {
@@ -99,12 +103,34 @@ export const authService = {
       throw invalidRefreshToken();
     }
 
-    if (!(await authRepository.revokeIfActive(stored.id))) {
+    const access = signAccessToken({
+      userId: user.id,
+      tokenVersion: user.tokenVersion,
+    });
+    const newRefreshToken = generateOpaqueToken();
+    const expiresAt = new Date(Date.now() + config.REFRESH_TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000);
+
+    const rotated = await authRepository.rotateRefreshToken(stored.id, {
+      userId: user.id,
+      familyId: stored.familyId,
+      tokenHash: hashToken(newRefreshToken),
+      tokenVersion: user.tokenVersion,
+      expiresAt,
+      createdByIp: client.ip?.slice(0, 64),
+      userAgent: client.userAgent?.slice(0, 512),
+    });
+
+    if (!rotated) {
       await authRepository.revokeFamily(stored.familyId);
       throw AppError.unauthorized('Refresh token was already used', AuthErrorCode.REFRESH_TOKEN_REUSED);
     }
 
-    return issueTokens(user, client, stored.familyId);
+    return {
+      accessToken: access.token,
+      accessTokenExpiresIn: access.expiresIn,
+      refreshToken: newRefreshToken,
+      refreshTokenExpiresAt: expiresAt.toISOString(),
+    };
   },
 
   /** Ends the session the refresh token belongs to. Idempotent: unknown tokens are ignored. */

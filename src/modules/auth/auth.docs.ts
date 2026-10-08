@@ -29,7 +29,8 @@ export function registerAuthDocs(registry: OpenAPIRegistry): void {
     description:
       'Returns the user and a token pair. If `user.mustChangePassword` is true, only `/auth/me`, ' +
       '`/auth/change-password` and `/auth/logout*` are allowed until the password is changed. ' +
-      'The account locks temporarily after repeated failures (423).',
+      'The account locks temporarily after repeated failures (423). To prevent user enumeration, ' +
+      'lockout and inactive statuses are only revealed after valid password verification.',
     request: { body: json(loginBodySchema) },
     responses: {
       200: jsonResponse('Signed in', successBody(sessionSchema)),

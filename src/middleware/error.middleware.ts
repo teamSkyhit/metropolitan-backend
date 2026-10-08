@@ -29,7 +29,8 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, next) => {
       message: appError.message,
       ...(appError.details !== undefined && { details: appError.details }),
       requestId: req.id,
-      ...(config.NODE_ENV === 'development' &&
+      ...(config.isLocal &&
+        config.NODE_ENV === 'development' &&
         appError.statusCode >= 500 &&
         err instanceof Error && { debug: { message: err.message, stack: err.stack } }),
     },

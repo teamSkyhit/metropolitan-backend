@@ -1,6 +1,6 @@
 import type { Media, Prisma } from '@prisma/client';
 import { prisma } from '../../config/database';
-import { notDeleted } from '../../shared/database/soft-delete';
+import { createdBy, notDeleted, softDeleteData } from '../../shared/database/soft-delete';
 import { toSkipTake } from '../../shared/http';
 import type { ListMediaQuery } from './media.schema';
 
@@ -13,6 +13,7 @@ export interface CreateMediaData {
   mimeType: string;
   fileSize: number;
   uploadedById: string | null;
+  actorId?: string | null;
 }
 
 export const mediaRepository = {
@@ -63,6 +64,7 @@ export const mediaRepository = {
   },
 
   create(data: CreateMediaData): Promise<MediaRecord> {
+    const audit = createdBy(data.actorId ?? data.uploadedById);
     return prisma.media.create({
       data: {
         fileName: data.fileName,
@@ -71,14 +73,16 @@ export const mediaRepository = {
         mimeType: data.mimeType,
         fileSize: data.fileSize,
         uploadedById: data.uploadedById,
+        createdById: audit.createdById,
+        updatedById: audit.updatedById,
       },
     });
   },
 
-  softDelete(id: string): Promise<MediaRecord> {
+  softDelete(id: string, actorId: string | null = null): Promise<MediaRecord> {
     return prisma.media.update({
       where: { id },
-      data: { deletedAt: new Date() },
+      data: softDeleteData(actorId),
     });
   },
 };

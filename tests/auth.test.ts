@@ -69,9 +69,21 @@ describe('POST /auth/login', () => {
     const user = await createUser();
     for (let i = 0; i < 5; i++) await login(user.email, 'WrongPassw0rd').expect(401);
 
-    const res = await login(user.email).expect(423);
+    // Wrong password on locked account must return 401 (not 423) to prevent enumeration
+    const wrongOnLocked = await login(user.email, 'WrongPassw0rd').expect(401);
+    expect(wrongOnLocked.body.error.code).toBe('AUTH_INVALID_CREDENTIALS');
 
+    // Correct password on locked account returns 423
+    const res = await login(user.email).expect(423);
     expect(res.body.error.code).toBe('AUTH_ACCOUNT_LOCKED');
+
+    // After lockout expires, login with correct password succeeds
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { lockedUntil: new Date(Date.now() - 1000) },
+    });
+    const unlocked = await login(user.email).expect(200);
+    expect(unlocked.body.data.user.id).toBe(user.id);
   });
 
   it('rejects deactivated accounts after checking the password', async () => {

@@ -263,7 +263,6 @@ model Product {
   @@index([hotDeal])
   @@index([deletedAt, createdAt])
   @@index([name])
-  @@index([sku])
   @@map("products")
 }
 
@@ -279,6 +278,8 @@ model Media {
   createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
   deletedAt    DateTime? @map("deleted_at") @db.Timestamptz(3)
+  createdById  String?   @map("created_by_id") @db.Uuid
+  updatedById  String?   @map("updated_by_id") @db.Uuid
 
   uploadedBy User? @relation("MediaUploader", fields: [uploadedById], references: [id], onDelete: SetNull)
 

@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { Prisma } from '@prisma/client';
+import { translatePrismaUniqueError } from '../../shared/database';
 import { AppError } from '../../shared/errors';
 import { buildPaginationMeta, type Paginated } from '../../shared/http';
 import { storageService, UPLOAD_LIMITS, validateFileSize, validateImageContent } from '../../shared/storage';
@@ -16,19 +16,19 @@ import {
   type UpdateProductBody,
 } from './products.schema';
 
-function handlePrismaUniqueError(err: unknown): void {
-  if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
-    const target = Array.isArray(err.meta?.target)
-      ? err.meta.target.join(',')
-      : String(err.meta?.target ?? '');
-    if (target.includes('sku')) {
-      throw AppError.conflict('A product with this SKU already exists', ProductsErrorCode.SKU_TAKEN);
-    }
-    if (target.includes('slug')) {
-      throw AppError.conflict('A product with this slug already exists', ProductsErrorCode.SLUG_TAKEN);
-    }
-    throw AppError.conflict('A record with the same unique value already exists');
-  }
+function handleProductUniqueError(err: unknown): never {
+  translatePrismaUniqueError(err, [
+    {
+      fieldSubstring: 'sku',
+      errorCode: ProductsErrorCode.SKU_TAKEN,
+      errorMessage: 'A product with this SKU already exists',
+    },
+    {
+      fieldSubstring: 'slug',
+      errorCode: ProductsErrorCode.SLUG_TAKEN,
+      errorMessage: 'A product with this slug already exists',
+    },
+  ]);
 }
 
 /** Maps database record to Admin Product DTO. */
@@ -239,8 +239,7 @@ export const productsService = {
       const record = await productsRepository.create({ ...body, sku: normalizedSku, slug }, actorId);
       return toProductDto(record);
     } catch (err) {
-      handlePrismaUniqueError(err);
-      throw err;
+      handleProductUniqueError(err);
     }
   },
 
@@ -277,8 +276,7 @@ export const productsService = {
       );
       return toProductDto(updated);
     } catch (err) {
-      handlePrismaUniqueError(err);
-      throw err;
+      handleProductUniqueError(err);
     }
   },
 

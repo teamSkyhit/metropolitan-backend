@@ -221,7 +221,8 @@ describe('Public Products API', () => {
       status: 'DRAFT',
     });
 
-    // 3. Product with inactive brand
+    // 3. Product with inactive brand (simulate brand deactivated after assignment)
+    await prisma.brand.update({ where: { id: inactiveBrand.id }, data: { isActive: true } });
     const prodInactiveBrand = await createTestProduct({
       name: 'Product Inactive Brand',
       sku: 'INACT-B-01',
@@ -229,8 +230,10 @@ describe('Public Products API', () => {
       categoryId: activeCat.id,
       status: 'PUBLISHED',
     });
+    await prisma.brand.update({ where: { id: inactiveBrand.id }, data: { isActive: false } });
 
-    // 4. Product with inactive category
+    // 4. Product with inactive category (simulate category deactivated after assignment)
+    await prisma.category.update({ where: { id: inactiveCat.id }, data: { isActive: true } });
     const prodInactiveCat = await createTestProduct({
       name: 'Product Inactive Category',
       sku: 'INACT-C-01',
@@ -238,6 +241,7 @@ describe('Public Products API', () => {
       categoryId: inactiveCat.id,
       status: 'PUBLISHED',
     });
+    await prisma.category.update({ where: { id: inactiveCat.id }, data: { isActive: false } });
 
     // 5. Soft-deleted product
     const toDelete = await createTestProduct({

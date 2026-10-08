@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { Prisma } from '@prisma/client';
+import { translatePrismaUniqueError } from '../../shared/database';
 import { AppError } from '../../shared/errors';
 import { buildPaginationMeta, type Paginated } from '../../shared/http';
 import { storageService, UPLOAD_LIMITS, validateFileSize, validateImageContent } from '../../shared/storage';
@@ -14,19 +14,19 @@ import {
   type UpdateBrandBody,
 } from './brands.schema';
 
-function handlePrismaUniqueError(err: unknown): void {
-  if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
-    const target = Array.isArray(err.meta?.target)
-      ? err.meta.target.join(',')
-      : String(err.meta?.target ?? '');
-    if (target.includes('name_key') || target.includes('name')) {
-      throw AppError.conflict('A brand with this name already exists', BrandsErrorCode.NAME_TAKEN);
-    }
-    if (target.includes('slug')) {
-      throw AppError.conflict('A brand with this slug already exists', BrandsErrorCode.SLUG_TAKEN);
-    }
-    throw AppError.conflict('A record with the same unique value already exists');
-  }
+function handleBrandUniqueError(err: unknown): never {
+  translatePrismaUniqueError(err, [
+    {
+      fieldSubstring: 'name',
+      errorCode: BrandsErrorCode.NAME_TAKEN,
+      errorMessage: 'A brand with this name already exists',
+    },
+    {
+      fieldSubstring: 'slug',
+      errorCode: BrandsErrorCode.SLUG_TAKEN,
+      errorMessage: 'A brand with this slug already exists',
+    },
+  ]);
 }
 
 /** Maps database record to Admin DTO. */
@@ -136,8 +136,7 @@ export const brandsService = {
       const record = await brandsRepository.create({ ...body, slug }, actorId);
       return toBrandDto(record);
     } catch (err) {
-      handlePrismaUniqueError(err);
-      throw err;
+      handleBrandUniqueError(err);
     }
   },
 
@@ -156,8 +155,7 @@ export const brandsService = {
       const updated = await brandsRepository.update(id, body, actorId);
       return toBrandDto(updated);
     } catch (err) {
-      handlePrismaUniqueError(err);
-      throw err;
+      handleBrandUniqueError(err);
     }
   },
 
@@ -175,6 +173,12 @@ export const brandsService = {
     if (brand.deletedAt) {
       throw AppError.badRequest(
         'Cannot assign a deleted brand to product',
+        options?.unavailableCode ?? 'PRODUCTS_BRAND_UNAVAILABLE'
+      );
+    }
+    if (!brand.isActive) {
+      throw AppError.badRequest(
+        'Cannot assign an inactive brand to product',
         options?.unavailableCode ?? 'PRODUCTS_BRAND_UNAVAILABLE'
       );
     }

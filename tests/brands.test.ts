@@ -70,6 +70,45 @@ describe('Brands Access Control & Authentication', () => {
     const restored = await api().post(`/api/v1/brands/${id}/restore`).set(sales.auth).expect(200);
     expect(restored.body.data.id).toBe(id);
   });
+
+  it('returns 403 Forbidden when an authenticated user lacks required permissions', async () => {
+    const permissionsModule = await import('../src/shared/security/permissions');
+    vi.spyOn(permissionsModule, 'permissionsFor').mockReturnValue(new Set());
+
+    const resCreate = await api().post('/api/v1/brands').set(sales.auth).send(sampleBrand).expect(403);
+    expect(resCreate.body.error.code).toBe('FORBIDDEN');
+
+    const resList = await api().get('/api/v1/brands').set(sales.auth).expect(403);
+    expect(resList.body.error.code).toBe('FORBIDDEN');
+
+    const id = randomUUID();
+    const resUpdate = await api()
+      .patch(`/api/v1/brands/${id}`)
+      .set(sales.auth)
+      .send({ name: 'Test' })
+      .expect(403);
+    expect(resUpdate.body.error.code).toBe('FORBIDDEN');
+
+    const resDelete = await api().delete(`/api/v1/brands/${id}`).set(sales.auth).expect(403);
+    expect(resDelete.body.error.code).toBe('FORBIDDEN');
+
+    const resRestore = await api().post(`/api/v1/brands/${id}/restore`).set(sales.auth).expect(403);
+    expect(resRestore.body.error.code).toBe('FORBIDDEN');
+
+    const resLogo = await api()
+      .put(`/api/v1/brands/${id}/logo`)
+      .set(sales.auth)
+      .attach('logo', validPngBuffer, 'logo.png')
+      .expect(403);
+    expect(resLogo.body.error.code).toBe('FORBIDDEN');
+
+    const resBanner = await api()
+      .put(`/api/v1/brands/${id}/banner`)
+      .set(sales.auth)
+      .attach('banner', validPngBuffer, 'banner.png')
+      .expect(403);
+    expect(resBanner.body.error.code).toBe('FORBIDDEN');
+  });
 });
 
 describe('Public Brand APIs', () => {

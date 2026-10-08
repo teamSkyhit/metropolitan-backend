@@ -9,7 +9,13 @@ import { categoriesModule, categoriesService } from '../modules/categories';
 import { contactsModule } from '../modules/contacts';
 import { dashboardModule } from '../modules/dashboard';
 import { mediaModule, registerMediaReferenceCheckers } from '../modules/media';
-import { notificationsModule } from '../modules/notifications';
+import {
+  notificationsModule,
+  notificationsService,
+  NoopEmailProvider,
+  type ContactRecipientResolver,
+  type NotificationEmailProvider,
+} from '../modules/notifications';
 import { productsModule, productsService, registerProductAssignValidation } from '../modules/products';
 import { homepageModule, homepageService } from '../modules/homepage';
 import type { AppModule } from '../shared/module';
@@ -49,6 +55,34 @@ registerMediaReferenceCheckers([
   { name: 'Category', checker: (url) => categoriesService.isMediaUrlReferenced(url) },
   { name: 'HomepageSection', checker: (url, id) => homepageService.isMediaUrlReferenced(url, id) },
 ]);
+
+// Notification delivery & recipient wiring (composition root)
+// Default to NoopEmailProvider (no SMTP provider is configured in environment).
+notificationsService.setEmailProvider(new NoopEmailProvider());
+
+// Default contact notification recipient resolver.
+// PENDING PRODUCT DECISION: The repository does not specify whether contact notifications
+// should route to all SUPER_ADMINs, all SALES_MANAGERs, users with 'contacts:read' permission,
+// or a configured email distribution list.
+// The composition root wires the resolver infrastructure with a safe empty default until
+// the product team confirms the recipient policy.
+notificationsService.setContactRecipientResolver({
+  async resolveRecipients() {
+    return { inAppUserIds: [], emails: [] };
+  },
+});
+
+export function configureContactNotifications(options?: {
+  resolver?: ContactRecipientResolver;
+  emailProvider?: NotificationEmailProvider;
+}): void {
+  if (options?.emailProvider) {
+    notificationsService.setEmailProvider(options.emailProvider);
+  }
+  if (options?.resolver) {
+    notificationsService.setContactRecipientResolver(options.resolver);
+  }
+}
 
 const CATALOG_BASE_PATHS = new Set(['/brands', '/categories', '/products', '/homepage']);
 

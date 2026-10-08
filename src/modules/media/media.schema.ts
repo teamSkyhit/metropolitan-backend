@@ -15,6 +15,7 @@ export const mediaSchema = z
     fileName: z.string(),
     storageKey: z.string(),
     publicUrl: z.string(),
+    /** Alias of publicUrl for frontend grid compatibility; server-side image transformation/variants are deferred. */
     thumbnailUrl: z.string(),
     mimeType: z.string(),
     fileSize: z.number().int(),

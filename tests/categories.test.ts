@@ -902,6 +902,76 @@ describe('DELETE /api/v1/categories/:id & Restore', () => {
     await api().delete(`/api/v1/categories/${category.body.data.id}`).set(admin.auth).expect(204);
   });
 
+  it('rejects deleting a category with a live child category with 409 CATEGORIES_HAS_CHILDREN', async () => {
+    const parent = await api().post('/api/v1/categories').set(admin.auth).send(sampleCategory).expect(201);
+    const child = await api()
+      .post('/api/v1/categories')
+      .set(admin.auth)
+      .send({ name: 'Child Category', slug: 'child-category', parentId: parent.body.data.id })
+      .expect(201);
+
+    const res = await api().delete(`/api/v1/categories/${parent.body.data.id}`).set(admin.auth).expect(409);
+    expect(res.body.error.code).toBe(CategoriesErrorCode.HAS_CHILDREN);
+    expect(res.body.error.message).toBe('Category cannot be deleted while it has active child categories.');
+
+    // Verify parent is not deleted
+    const parentRow = await prisma.category.findUniqueOrThrow({ where: { id: parent.body.data.id } });
+    expect(parentRow.deletedAt).toBeNull();
+
+    // Verify child's parentId relationship remains completely unchanged
+    const childRow = await prisma.category.findUniqueOrThrow({ where: { id: child.body.data.id } });
+    expect(childRow.parentId).toBe(parent.body.data.id);
+    expect(childRow.deletedAt).toBeNull();
+  });
+
+  it('rejects deleting a category with multiple live child categories with 409', async () => {
+    const parent = await api().post('/api/v1/categories').set(admin.auth).send(sampleCategory).expect(201);
+    await api()
+      .post('/api/v1/categories')
+      .set(admin.auth)
+      .send({ name: 'Child One', slug: 'child-one', parentId: parent.body.data.id })
+      .expect(201);
+    await api()
+      .post('/api/v1/categories')
+      .set(admin.auth)
+      .send({ name: 'Child Two', slug: 'child-two', parentId: parent.body.data.id })
+      .expect(201);
+
+    const res = await api().delete(`/api/v1/categories/${parent.body.data.id}`).set(admin.auth).expect(409);
+    expect(res.body.error.code).toBe(CategoriesErrorCode.HAS_CHILDREN);
+  });
+
+  it('allows deletion of category when all child categories are soft-deleted', async () => {
+    const parent = await api().post('/api/v1/categories').set(admin.auth).send(sampleCategory).expect(201);
+    const child = await api()
+      .post('/api/v1/categories')
+      .set(admin.auth)
+      .send({ name: 'Child Category', slug: 'child-category', parentId: parent.body.data.id })
+      .expect(201);
+
+    // Soft delete the child category
+    await api().delete(`/api/v1/categories/${child.body.data.id}`).set(admin.auth).expect(204);
+
+    // Parent category deletion now succeeds
+    await api().delete(`/api/v1/categories/${parent.body.data.id}`).set(admin.auth).expect(204);
+
+    const parentInDb = await prisma.category.findUniqueOrThrow({ where: { id: parent.body.data.id } });
+    expect(parentInDb.deletedAt).not.toBeNull();
+  });
+
+  it('allows deletion of category with no children and no products', async () => {
+    const leafCategory = await api()
+      .post('/api/v1/categories')
+      .set(admin.auth)
+      .send({ name: 'Solo Category', slug: 'solo-category' })
+      .expect(201);
+
+    await api().delete(`/api/v1/categories/${leafCategory.body.data.id}`).set(admin.auth).expect(204);
+
+    const inDb = await prisma.category.findUniqueOrThrow({ where: { id: leafCategory.body.data.id } });
+    expect(inDb.deletedAt).not.toBeNull();
+  });
+
   it('restores soft-deleted category successfully', async () => {
     const created = await api().post('/api/v1/categories').set(admin.auth).send(sampleCategory).expect(201);
     const id = created.body.data.id;

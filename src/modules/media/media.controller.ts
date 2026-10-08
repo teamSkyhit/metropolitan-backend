@@ -27,7 +27,8 @@ export const mediaController = {
   }),
 
   remove: handle({ params: idParamsSchema }, async (req, res) => {
-    await mediaService.remove(req.params.id);
+    const auth = requireAuth(req);
+    await mediaService.remove(req.params.id, auth.userId);
     sendNoContent(res);
   }),
 };
