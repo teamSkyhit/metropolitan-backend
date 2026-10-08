@@ -1,4 +1,3 @@
-import { ContactStatus } from '@prisma/client';
 import { z } from 'zod';
 import {
   dateRangeFields,
@@ -7,9 +6,16 @@ import {
   withDateRangeCheck,
 } from '../../shared/http';
 
-export { ContactStatus };
+export const ContactStatus = {
+  NEW: 'NEW',
+  READ: 'READ',
+  ARCHIVED: 'ARCHIVED',
+} as const;
 
-export const contactStatusEnum = z.enum(['NEW', 'READ', 'ARCHIVED']);
+export type ContactStatus = (typeof ContactStatus)[keyof typeof ContactStatus];
+
+export const CONTACT_STATUSES = ['NEW', 'READ', 'ARCHIVED'] as const;
+export const contactStatusEnum = z.enum(CONTACT_STATUSES);
 export type ContactStatusType = z.infer<typeof contactStatusEnum>;
 
 export const ContactsErrorCode = {
@@ -131,8 +137,6 @@ export const contactDetailSchema = z
     status: contactStatusEnum,
     createdAt: z.iso.datetime(),
     updatedAt: z.iso.datetime(),
-    createdById: z.uuid().nullable().optional(),
-    updatedById: z.uuid().nullable().optional(),
   })
   .meta({ id: 'ContactDetail' });
 

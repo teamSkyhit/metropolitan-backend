@@ -59,22 +59,38 @@ npm run dev             # http://localhost:5000
 
 ## Modules
 
-| Module        | CRM endpoints (`/api/v1`)                                   | Public endpoints (`/api/v1/public`)        |
-| ------------- | ----------------------------------------------------------- | ------------------------------------------ |
-| health        | `GET /health`, `GET /health/ready`                          | n/a                                        |
-| auth          | login, refresh, logout, logout-all, me, change-password     | n/a                                        |
-| users         | CRUD for Sales Managers, lookup                             | n/a                                        |
-| enquiries     | list, detail, notes, status, assignee, follow-ups, delete   | `POST /enquiries`                          |
-| brands        | list, create, detail, update, delete, restore, logo/banner  | `GET /brands`, `GET /brands/:slug`         |
-| categories    | list, create, detail, update, delete, restore, banner       | `GET /categories`, `GET /categories/:slug` |
-| products      | list, create, detail, update, delete, restore, image, specs | `GET /products`, `GET /products/:slug`     |
-| media         | list, detail, upload, delete (with in-use reference guard)  | n/a                                        |
-| dashboard     | summary, trends, recent-enquiries                           | n/a                                        |
-| contacts      | list, detail, status, delete                                | `POST /contacts` (alias: `/contact`)       |
-| notifications | list, unread-count, read-all, mark-read                     | n/a                                        |
-| homepage      | list, detail, create, update, delete, reorder               | `GET /homepage`                            |
+| Module        | CRM endpoints (`/api/v1`)                                   | Public endpoints (`/api/v1/public`)        | Restore Supported                    |
+| ------------- | ----------------------------------------------------------- | ------------------------------------------ | ------------------------------------ |
+| health        | `GET /health`, `GET /health/ready`                          | n/a                                        | n/a                                  |
+| auth          | login, refresh, logout, logout-all, me, change-password     | n/a                                        | n/a                                  |
+| users         | CRUD for Sales Managers, lookup, status, reset, restore     | n/a                                        | Yes (`POST /users/:id/restore`)      |
+| enquiries     | list, detail, notes, status, assignee, follow-ups, delete   | `POST /enquiries`                          | No                                   |
+| brands        | list, create, detail, update, delete, restore, logo/banner  | `GET /brands`, `GET /brands/:slug`         | Yes (`POST /brands/:id/restore`)     |
+| categories    | list, create, detail, update, delete, restore, banner       | `GET /categories`, `GET /categories/:slug` | Yes (`POST /categories/:id/restore`) |
+| products      | list, create, detail, update, delete, restore, image, specs | `GET /products`, `GET /products/:slug`     | Yes (`POST /products/:id/restore`)   |
+| media         | list, detail, upload, delete (with in-use reference guard)  | n/a                                        | No                                   |
+| dashboard     | summary, trends, recent-enquiries                           | n/a                                        | n/a                                  |
+| contacts      | list, detail, status, delete                                | `POST /contacts` (alias: `/contact`)       | No                                   |
+| notifications | list, unread-count, read-all, mark-read                     | n/a                                        | No                                   |
+| homepage      | list, detail, create, update, delete, reorder               | `GET /homepage`                            | No                                   |
 
-Full request/response contracts: Swagger UI at `/api/docs`.
+Full request/response contracts: Swagger UI at `/api/docs`. Swagger is available in local and staging environments, and disabled in production.
+
+### Restore Policy Summary
+
+Soft-delete restore endpoints (`POST /api/v1/<module>/:id/restore`) are supported for:
+
+- **Users**: Restores soft-deleted account (`users:delete` permission).
+- **Brands**: Restores soft-deleted brand (`brands:delete` permission).
+- **Categories**: Restores soft-deleted category (`categories:delete` permission).
+- **Products**: Restores soft-deleted product (`products:delete` permission).
+
+Restore is intentionally **not supported** (absent) for transactional, audit, or content records:
+
+- **Enquiries**: Terminal records / append-only audit trail.
+- **Contacts**: External inbound submissions.
+- **Media**: Deletions perform physical asset cleanup; re-upload is required.
+- **Homepage Sections**: Content containers are created or replaced directly.
 
 ### Homepage CMS Module
 
@@ -130,14 +146,14 @@ Full request/response contracts: Swagger UI at `/api/docs`.
 
 - **Drivers**:
   - `STORAGE_DRIVER=local` (default): Saves uploads to local filesystem under `STORAGE_LOCAL_DIR` (`uploads/`) and serves statically from `STORAGE_BASE_URL` (`/uploads`).
-  - `STORAGE_DRIVER=s3`: S3-compatible object storage provider, optimized for Cloudflare R2 and AWS S3.
+  - `STORAGE_DRIVER=s3`: S3-compatible object storage provider, configured for Cloudflare R2 and AWS S3.
 - **Cloudflare R2 Deployment Setup**:
   - `STORAGE_DRIVER=s3`
-  - `S3_BUCKET`: The R2 bucket name (e.g. `metropolitan-media`).
-  - `S3_REGION=auto`: Cloudflare R2 uses `auto` as the region string (unlike AWS regions such as `us-east-1`).
+  - `S3_BUCKET`: The R2 bucket name (e.g. `metropolitan-staging` or `metropolitan-media`).
+  - `S3_REGION=auto`: Cloudflare R2 accepts `auto` as the region string.
   - **S3 API Endpoint vs. Public Media URL**:
-    - `S3_ENDPOINT`: Private S3-compatible API endpoint used by the backend SDK for read/write/delete operations (e.g. `https://<account_id>.r2.cloudflarestorage.com`). The SDK uses virtual-hosted style (`forcePathStyle: false`). This endpoint is strictly internal to the backend and **never** used to construct public URLs.
-    - `S3_PUBLIC_BASE_URL`: Public base URL for serving uploaded assets to clients and browsers (e.g. `https://pub-<hash>.r2.dev` or a custom domain like `https://media.metropolitan.com`). `getUrl()` always constructs `<S3_PUBLIC_BASE_URL>/<key>` safely without duplicate slashes.
+    - `S3_ENDPOINT`: Private S3-compatible API endpoint used by the backend SDK for read/write/delete operations (e.g. `https://<account_id>.r2.cloudflarestorage.com`). The S3 client is configured with virtual-hosted style (`forcePathStyle: false`) as our chosen compatible configuration. This endpoint is strictly internal to the backend and **never** used to construct public URLs.
+    - `S3_PUBLIC_BASE_URL`: Public base URL for serving uploaded assets to clients and browsers (e.g. `https://pub-<hash>.r2.dev` or a custom domain like `https://media.metropolitan.com`). `getUrl()` always constructs `<S3_PUBLIC_BASE_URL>/<key>` safely without duplicate slashes. Must be a valid HTTP or HTTPS URL.
   - **Required Permissions**:
     - In Cloudflare Dashboard → R2 → Manage R2 API Tokens, create a token with `Object Read & Write` permissions scoped to the target bucket.
     - Map the generated credentials to `S3_ACCESS_KEY_ID` and `S3_SECRET_ACCESS_KEY`.
@@ -148,7 +164,8 @@ Full request/response contracts: Swagger UI at `/api/docs`.
   - **Path Sanitization & Key Derivation**:
     - Safe folder/path sanitization rules reject directory traversal (`..`), leading slashes, and absolute escapes on both local and S3 drivers.
     - `delete()` accepts either a raw storage key or a full public/endpoint URL, correctly deriving the object key and stripping any bucket name prefixes so `metropolitan-media/<key>` is never sent as the DeleteObject key.
-- **Media Delete Guard**: `DELETE /api/v1/media/:id` returns 409 Conflict if an active product, brand logo/banner, or category banner references the asset.
+- **Media Delete Guard**: `DELETE /api/v1/media/:id` returns 409 Conflict if an active product, brand logo/banner, category banner, or active homepage section references the asset.
+- **Media thumbnailUrl Contract**: `thumbnailUrl` in `MediaDto` is currently an alias to `publicUrl` provided for frontend grid compatibility. Server-side image transformation/CDN variants are deferred.
 
 ### Notifications module
 
@@ -159,13 +176,14 @@ Full request/response contracts: Swagger UI at `/api/docs`.
 - Pluggable email provider abstraction (`NotificationEmailProvider`): default `NoopEmailProvider`, testable via `TestEmailProvider`. Currently Noop/Test email providers only. Real external email provider and durable cross-process email delivery idempotency are future infrastructure; in-app notification idempotency is durable in PostgreSQL via unique `idempotency_key`, while email deduplication is handled in-memory within the dispatch path.
 - Security: Header injection protection at both service boundary and provider levels rejects CR, LF, CRLF, and Unicode separators (U+2028, U+2029). Dynamic email content is HTML-escaped.
 - Contact form integration: Uses failure-isolated post-persistence notification dispatch via `handleContactSubmitted()`. Contact submission persistence completes before notification handling; the call is awaited in the request flow (not background/queue delivery) and any notification failure is isolated so it never crashes or rolls back the contact submission.
-- Recipient routing is an unconfirmed business rule: resolver defaults to no automatic recipients unless explicitly configured; no hardcoded roles (`SALES_MANAGER`, `SUPER_ADMIN`) are assumed.
+- Recipient routing is an unconfirmed business rule: resolver defaults to no automatic recipients unless explicitly configured; no hardcoded roles (`SALES_MANAGER`, `SUPER_ADMIN`) are assumed. Contact submission succeeds and notification plumbing exists, but the default recipient resolver is empty. No CRM in-app or email notifications will be created upon contact submission until `configureContactNotifications` receives an approved recipient policy.
+- Rate limiting operates with an in-memory store: safe for single backend instance deployment (single-instance staging capable). A shared store (e.g. Redis) is required before deploying multiple backend instances or auto-scaling.
 
 ### Website integration (public contact form)
 
 1. Render the captcha widget using action name `contact_submit` (reCAPTCHA v3 or Cloudflare Turnstile).
 2. `POST /api/v1/public/contacts` (or alias `POST /api/v1/public/contact`) with the token in the `X-Captcha-Token` header.
-3. Protected by `rateLimiters.publicForm` (30 req / 15 min per IP) and CORS origins in `PUBLIC_CORS_ORIGINS`.
+3. Protected by `rateLimiters.publicForm` (default 10 req / 15 min per IP; configurable via `RATE_LIMIT_PUBLIC_MAX`) and CORS origins in `PUBLIC_CORS_ORIGINS`.
 4. Stored as `ContactSubmission` with audit actor tracking and soft-delete support. Contact persistence completes before notification handling, followed by failure-isolated post-persistence notification dispatch via `notificationsService` (synchronously awaited in the request flow; external message queue deferred).
 
 ### Contact submission workflow & permissions

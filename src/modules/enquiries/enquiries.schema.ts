@@ -1,4 +1,3 @@
-import { EnquiryStatus } from '@prisma/client';
 import { z } from 'zod';
 import {
   dateRangeFields,
@@ -7,7 +6,29 @@ import {
   withDateRangeCheck,
 } from '../../shared/http';
 
-export { EnquiryStatus };
+export const EnquiryStatus = {
+  NEW: 'NEW',
+  ASSIGNED: 'ASSIGNED',
+  CONTACTED: 'CONTACTED',
+  QUOTATION_SENT: 'QUOTATION_SENT',
+  NEGOTIATION: 'NEGOTIATION',
+  CLOSED_WON: 'CLOSED_WON',
+  CLOSED_LOST: 'CLOSED_LOST',
+} as const;
+
+export type EnquiryStatus = (typeof EnquiryStatus)[keyof typeof EnquiryStatus];
+
+export const ENQUIRY_STATUSES = [
+  'NEW',
+  'ASSIGNED',
+  'CONTACTED',
+  'QUOTATION_SENT',
+  'NEGOTIATION',
+  'CLOSED_WON',
+  'CLOSED_LOST',
+] as const;
+
+export const enquiryStatusEnum = z.enum(ENQUIRY_STATUSES);
 
 export const EnquiriesErrorCode = {
   INVALID_STATUS_TRANSITION: 'ENQUIRY_INVALID_STATUS_TRANSITION',

@@ -340,7 +340,6 @@ describe('CRM Contacts Management (Authenticated)', () => {
       .expect(200);
 
     expect(updateRes.body.data.status).toBe('READ');
-    expect(updateRes.body.data.updatedById).toBe(sales.user.id);
 
     const inDb1 = await prisma.contactSubmission.findUniqueOrThrow({ where: { id } });
     expect(inDb1.status).toBe('READ');
@@ -354,7 +353,6 @@ describe('CRM Contacts Management (Authenticated)', () => {
       .expect(200);
 
     expect(archiveRes.body.data.status).toBe('ARCHIVED');
-    expect(archiveRes.body.data.updatedById).toBe(admin.user.id);
 
     const inDb2 = await prisma.contactSubmission.findUniqueOrThrow({ where: { id } });
     expect(inDb2.status).toBe('ARCHIVED');

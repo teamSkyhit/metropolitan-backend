@@ -48,13 +48,16 @@ describe('loadConfig', () => {
     expect(() => loadConfig({ ...base, CAPTCHA_PROVIDER: 'turnstile' })).toThrow(/CAPTCHA_SECRET_KEY/);
   });
 
-  it('disables API docs in production by default', () => {
+  it('disables API docs in production even if API_DOCS_ENABLED=true', () => {
     const config = loadConfig({
       ...base,
       APP_ENV: 'production',
       CORS_ORIGINS: 'https://crm.example.com',
+      PUBLIC_CORS_ORIGINS: 'https://www.example.com',
+      CAPTCHA_ALLOWED_HOSTNAMES: 'www.example.com',
       CAPTCHA_PROVIDER: 'turnstile',
       CAPTCHA_SECRET_KEY: 'secret',
+      API_DOCS_ENABLED: 'true',
     });
 
     expect(config.apiDocsEnabled).toBe(false);

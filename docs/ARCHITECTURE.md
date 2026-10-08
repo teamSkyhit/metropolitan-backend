@@ -59,12 +59,12 @@ request
 
 ## API surfaces
 
-| Surface | Mount                     | Callers         | Protection                                  |
-| ------- | ------------------------- | --------------- | ------------------------------------------- |
-| CRM     | `/api/v1/<module>`        | CRM frontend    | JWT + permissions, `CORS_ORIGINS`           |
-| Public  | `/api/v1/public/<module>` | Public website  | Rate limit + captcha, `PUBLIC_CORS_ORIGINS` |
-| Health  | `/api/v1/health[/ready]`  | Uptime monitors | None (no sensitive data)                    |
-| Docs    | `/api/docs`               | Developers      | Disabled in production by default           |
+| Surface | Mount                     | Callers         | Protection                                                                                                               |
+| ------- | ------------------------- | --------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| CRM     | `/api/v1/<module>`        | CRM frontend    | JWT + permissions, `CORS_ORIGINS`                                                                                        |
+| Public  | `/api/v1/public/<module>` | Public website  | Rate limit + captcha, `PUBLIC_CORS_ORIGINS`                                                                              |
+| Health  | `/api/v1/health[/ready]`  | Uptime monitors | None (no sensitive data)                                                                                                 |
+| Docs    | `/api/docs`               | Developers      | Disabled in production (`APP_ENV=production`), enabled by default in local/staging (controllable via `API_DOCS_ENABLED`) |
 
 ## Environments and branches
 
@@ -74,12 +74,19 @@ request
 | `develop`   | staging     | single instance (free hosting) | `staging`    |
 | `main`      | production  | client infrastructure          | `production` |
 
-`APP_ENV` turns on stricter checks: CORS lists are required and wildcards are rejected outside local,
-and a captcha provider is mandatory in production.
+`APP_ENV` turns on stricter configuration checks outside `local` (both `staging` and `production`):
 
-Rate limits use an in-memory store, which is correct for a single instance. If production runs several
-instances behind a load balancer, switch `createRateLimiter` to a shared store (e.g. Redis) before
-scaling out.
+- `CORS_ORIGINS` and `PUBLIC_CORS_ORIGINS` are strictly required, cannot be empty, and wildcards (`*`) are rejected.
+- A captcha provider (`CAPTCHA_PROVIDER`) cannot be `none` (must be `turnstile`, `recaptcha`, or `hcaptcha`), `CAPTCHA_SECRET_KEY` is required, and `CAPTCHA_ALLOWED_HOSTNAMES` is required with at least one domain (wildcards rejected).
+- `JWT_ACCESS_SECRET` rejects weak or default placeholder secrets outside local.
+- If `STORAGE_DRIVER === 's3'`, all S3 configuration fields (`S3_BUCKET`, `S3_REGION`, `S3_ENDPOINT`, `S3_PUBLIC_BASE_URL`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`) are validated and required, and `S3_PUBLIC_BASE_URL` must be a valid HTTP or HTTPS URL.
+
+### Staging & Deployment Caveats
+
+- **Single-instance staging capable**: The application is capable of single-instance staging deployment, pending final senior audit sign-off.
+- **In-memory rate limiting**: Rate limits use an in-memory store (`express-rate-limit` default memory store), which is appropriate only for a single backend instance. A shared store (e.g. Redis) is required before deploying multiple instances behind a load balancer or auto-scaling.
+- **Contact notifications**: Public contact submissions succeed and notification plumbing is implemented, but the default recipient resolver is empty. No CRM in-app or email notifications will be created upon contact submission until `configureContactNotifications` receives an approved business recipient policy.
+- **Transactional email provider**: Email delivery uses a stub (`NoopEmailProvider` / `TestEmailProvider`). Integration with a real transactional email provider (SES, Resend, SendGrid) and durable message queue is deferred.
 
 ## Deployment
 
@@ -98,7 +105,7 @@ Media asset storage is decoupled from the application logic via `IStorageService
 ### Drivers
 
 - **Local Driver (`LocalStorageService`)**: Used during local development. Saves uploads to the local filesystem (`STORAGE_LOCAL_DIR=uploads`) and serves them statically at `STORAGE_BASE_URL=/uploads`.
-- **S3 Driver (`S3StorageService`)**: Production-ready S3-compatible driver wired for Cloudflare R2 (`STORAGE_DRIVER=s3`).
+- **S3 Driver (`S3StorageService`)**: S3-compatible driver wired for Cloudflare R2 and AWS S3 (`STORAGE_DRIVER=s3`).
 
 ### Architecture & Configuration Principles
 

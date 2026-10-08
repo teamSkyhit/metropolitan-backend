@@ -40,8 +40,6 @@ export function toContactDetailDto(record: ContactSubmissionRecord): ContactDeta
     status: record.status,
     createdAt: record.createdAt.toISOString(),
     updatedAt: record.updatedAt.toISOString(),
-    createdById: record.createdById,
-    updatedById: record.updatedById,
   };
 }
 

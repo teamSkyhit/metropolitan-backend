@@ -117,6 +117,25 @@ const envSchema = z
           });
         }
       }
+
+      if (env.S3_PUBLIC_BASE_URL && env.S3_PUBLIC_BASE_URL.trim() !== '') {
+        try {
+          const parsed = new URL(env.S3_PUBLIC_BASE_URL);
+          if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+            ctx.addIssue({
+              code: 'custom',
+              path: ['S3_PUBLIC_BASE_URL'],
+              message: 'S3_PUBLIC_BASE_URL must be a valid HTTP or HTTPS URL',
+            });
+          }
+        } catch {
+          ctx.addIssue({
+            code: 'custom',
+            path: ['S3_PUBLIC_BASE_URL'],
+            message: 'S3_PUBLIC_BASE_URL must be a valid HTTP or HTTPS URL',
+          });
+        }
+      }
     }
 
     if (env.APP_ENV === 'local') return;
@@ -138,7 +157,7 @@ const envSchema = z
       });
     }
 
-    for (const key of ['CORS_ORIGINS', 'PUBLIC_CORS_ORIGINS'] as const) {
+    for (const key of ['CORS_ORIGINS', 'PUBLIC_CORS_ORIGINS', 'CAPTCHA_ALLOWED_HOSTNAMES'] as const) {
       if (env[key].includes('*')) {
         ctx.addIssue({ code: 'custom', path: [key], message: `${key} must not contain "*" outside local` });
       }
@@ -150,11 +169,25 @@ const envSchema = z
         message: 'CORS_ORIGINS is required outside local',
       });
     }
-    if (env.APP_ENV === 'production' && env.CAPTCHA_PROVIDER === 'none') {
+    if (env.PUBLIC_CORS_ORIGINS.length === 0) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['PUBLIC_CORS_ORIGINS'],
+        message: 'PUBLIC_CORS_ORIGINS is required outside local',
+      });
+    }
+    if (env.CAPTCHA_PROVIDER === 'none') {
       ctx.addIssue({
         code: 'custom',
         path: ['CAPTCHA_PROVIDER'],
-        message: 'A captcha provider is required in production',
+        message: 'A captcha provider is required outside local',
+      });
+    }
+    if (env.CAPTCHA_ALLOWED_HOSTNAMES.length === 0) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['CAPTCHA_ALLOWED_HOSTNAMES'],
+        message: 'CAPTCHA_ALLOWED_HOSTNAMES is required outside local',
       });
     }
   });
@@ -182,7 +215,7 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): AppConfig {
     isProduction: env.NODE_ENV === 'production',
     isTest: env.NODE_ENV === 'test',
     isLocal: env.APP_ENV === 'local',
-    apiDocsEnabled: env.API_DOCS_ENABLED ?? env.APP_ENV !== 'production',
+    apiDocsEnabled: env.APP_ENV === 'production' ? false : (env.API_DOCS_ENABLED ?? true),
   });
 }
 

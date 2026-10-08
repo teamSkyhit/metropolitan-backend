@@ -36,6 +36,7 @@ Enforced by ESLint:
 - Only `*.repository.ts` files may import `src/config/database` (the Prisma client).
 - A module may import another module **only through its `index.ts`** (`../users`, never `../users/users.service`).
 - `src/shared` and `src/middleware` must never import from `src/modules`.
+- **Approved Exception — Dashboard Facade**: `src/modules/dashboard` intentionally acts as a read-only analytics facade aggregating enquiry metrics via `enquiriesService`. It has no database table or repository of its own.
 
 ## 2. Validation: `handle()`
 

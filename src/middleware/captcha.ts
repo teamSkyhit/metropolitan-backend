@@ -32,7 +32,12 @@ export async function verifyCaptchaToken(
   options: CaptchaOptions = {}
 ) {
   const provider = config.CAPTCHA_PROVIDER;
-  if (provider === 'none') return;
+  if (provider === 'none') {
+    if (!config.isLocal) {
+      throw AppError.internal('Captcha provider must be configured outside local environment');
+    }
+    return;
+  }
 
   const form = new URLSearchParams({ secret: config.CAPTCHA_SECRET_KEY ?? '', response: token });
   if (remoteIp) form.set('remoteip', remoteIp);
@@ -62,8 +67,10 @@ export async function verifyCaptchaToken(
 
   if (!result.success) throw reject('unsuccessful');
   if (provider === 'recaptcha' && (result.score ?? 0) < config.CAPTCHA_MIN_SCORE) throw reject('low-score');
-  if (options.action && result.action !== undefined && result.action !== options.action) {
-    throw reject('action-mismatch');
+  if (options.action && (provider === 'turnstile' || provider === 'recaptcha')) {
+    if (!result.action || result.action !== options.action) {
+      throw reject('action-mismatch');
+    }
   }
   if (
     config.CAPTCHA_ALLOWED_HOSTNAMES.length > 0 &&

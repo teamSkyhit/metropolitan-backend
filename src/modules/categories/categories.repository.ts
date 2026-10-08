@@ -1,5 +1,6 @@
 import type { Category, Prisma } from '@prisma/client';
 import { prisma } from '../../config/database';
+import { AppError } from '../../shared/errors';
 import {
   createdBy,
   notDeleted,
@@ -8,7 +9,12 @@ import {
   updatedBy,
 } from '../../shared/database/soft-delete';
 import { toSkipTake } from '../../shared/http';
-import type { CreateCategoryBody, ListCategoriesQuery, UpdateCategoryBody } from './categories.schema';
+import {
+  CategoriesErrorCode,
+  type CreateCategoryBody,
+  type ListCategoriesQuery,
+  type UpdateCategoryBody,
+} from './categories.schema';
 
 export type CategoryRecord = Category;
 
@@ -91,6 +97,18 @@ export const categoriesRepository = {
       .then((count) => count > 0);
   },
 
+  /** Checks if any direct live child categories exist for the given parent category id. */
+  hasLiveChildren(parentId: string): Promise<boolean> {
+    return prisma.category
+      .count({
+        where: {
+          parentId,
+          ...notDeleted,
+        },
+      })
+      .then((count) => count > 0);
+  },
+
   async findMany(query: ListCategoriesQuery): Promise<{ items: Category[]; total: number }> {
     const where: Prisma.CategoryWhereInput = {
       ...notDeleted,
@@ -151,10 +169,29 @@ export const categoriesRepository = {
     });
   },
 
-  softDelete(id: string, actorId: string): Promise<Category> {
-    return prisma.category.update({
-      where: { id },
-      data: softDeleteData(actorId),
+  /**
+   * Atomically checks for live child categories and soft-deletes the category within a single database transaction.
+   * Prevents TOCTOU races where a child category could be inserted concurrently between checking and soft deleting.
+   */
+  async softDelete(id: string, actorId: string): Promise<Category> {
+    return prisma.$transaction(async (tx) => {
+      const liveChildrenCount = await tx.category.count({
+        where: {
+          parentId: id,
+          ...notDeleted,
+        },
+      });
+      if (liveChildrenCount > 0) {
+        throw AppError.conflict(
+          'Category cannot be deleted while it has active child categories.',
+          CategoriesErrorCode.HAS_CHILDREN
+        );
+      }
+
+      return tx.category.update({
+        where: { id },
+        data: softDeleteData(actorId),
+      });
     });
   },
 

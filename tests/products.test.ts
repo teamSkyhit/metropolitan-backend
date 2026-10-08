@@ -425,6 +425,56 @@ describe('Product Creation & Validation', () => {
     expect(res.body.error.code).toBe(ProductsErrorCode.CATEGORY_UNAVAILABLE);
   });
 
+  it('rejects inactive brand with PRODUCTS_BRAND_UNAVAILABLE on product create', async () => {
+    const brand = await createTestBrand({ isActive: false });
+    const category = await createTestCategory();
+
+    const res = await api()
+      .post('/api/v1/products')
+      .set(admin.auth)
+      .send({
+        name: 'Product with Inactive Brand',
+        sku: 'SKU-INACT-B',
+        brandId: brand.id,
+        categoryId: category.id,
+      })
+      .expect(400);
+
+    expect(res.body.error.code).toBe(ProductsErrorCode.BRAND_UNAVAILABLE);
+  });
+
+  it('rejects inactive category with PRODUCTS_CATEGORY_UNAVAILABLE on product create', async () => {
+    const brand = await createTestBrand();
+    const category = await createTestCategory({ isActive: false });
+
+    const res = await api()
+      .post('/api/v1/products')
+      .set(admin.auth)
+      .send({
+        name: 'Product with Inactive Cat',
+        sku: 'SKU-INACT-C',
+        brandId: brand.id,
+        categoryId: category.id,
+      })
+      .expect(400);
+
+    expect(res.body.error.code).toBe(ProductsErrorCode.CATEGORY_UNAVAILABLE);
+  });
+
+  it('accepts active brand and category on product create', async () => {
+    const brand = await createTestBrand({ isActive: true });
+    const category = await createTestCategory({ isActive: true });
+
+    const res = await api()
+      .post('/api/v1/products')
+      .set(admin.auth)
+      .send(sampleProductPayload(brand.id, category.id, { sku: 'SKU-ACT-CREATE' }))
+      .expect(201);
+
+    expect(res.body.data.brandId).toBe(brand.id);
+    expect(res.body.data.categoryId).toBe(category.id);
+  });
+
   it('normalizes SKU to uppercase before persistence', async () => {
     const brand = await createTestBrand();
     const category = await createTestCategory();
@@ -1185,6 +1235,68 @@ describe('Product Partial Updates (PATCH)', () => {
       .send({ categoryId: cat2.id })
       .expect(400);
     expect(unavailableRes.body.error.code).toBe(ProductsErrorCode.CATEGORY_UNAVAILABLE);
+  });
+
+  it('rejects updating brandId to inactive brand with PRODUCTS_BRAND_UNAVAILABLE', async () => {
+    const brand1 = await createTestBrand();
+    const brand2 = await createTestBrand({ isActive: false });
+    const cat = await createTestCategory();
+
+    const created = await api()
+      .post('/api/v1/products')
+      .set(admin.auth)
+      .send(sampleProductPayload(brand1.id, cat.id))
+      .expect(201);
+
+    const res = await api()
+      .patch(`/api/v1/products/${created.body.data.id}`)
+      .set(admin.auth)
+      .send({ brandId: brand2.id })
+      .expect(400);
+
+    expect(res.body.error.code).toBe(ProductsErrorCode.BRAND_UNAVAILABLE);
+  });
+
+  it('rejects updating categoryId to inactive category with PRODUCTS_CATEGORY_UNAVAILABLE', async () => {
+    const brand = await createTestBrand();
+    const cat1 = await createTestCategory();
+    const cat2 = await createTestCategory({ isActive: false });
+
+    const created = await api()
+      .post('/api/v1/products')
+      .set(admin.auth)
+      .send(sampleProductPayload(brand.id, cat1.id))
+      .expect(201);
+
+    const res = await api()
+      .patch(`/api/v1/products/${created.body.data.id}`)
+      .set(admin.auth)
+      .send({ categoryId: cat2.id })
+      .expect(400);
+
+    expect(res.body.error.code).toBe(ProductsErrorCode.CATEGORY_UNAVAILABLE);
+  });
+
+  it('accepts updating brandId and categoryId to new active brand and category', async () => {
+    const brand1 = await createTestBrand();
+    const brand2 = await createTestBrand({ isActive: true });
+    const cat1 = await createTestCategory();
+    const cat2 = await createTestCategory({ isActive: true });
+
+    const created = await api()
+      .post('/api/v1/products')
+      .set(admin.auth)
+      .send(sampleProductPayload(brand1.id, cat1.id))
+      .expect(201);
+
+    const res = await api()
+      .patch(`/api/v1/products/${created.body.data.id}`)
+      .set(admin.auth)
+      .send({ brandId: brand2.id, categoryId: cat2.id })
+      .expect(200);
+
+    expect(res.body.data.brandId).toBe(brand2.id);
+    expect(res.body.data.categoryId).toBe(cat2.id);
   });
 
   it('rejects empty update body with 400', async () => {

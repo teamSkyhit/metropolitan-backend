@@ -129,7 +129,7 @@ export function registerCategoriesDocs(registry: OpenAPIRegistry): void {
     request: { params: idParamsSchema },
     responses: {
       204: { description: 'Deleted' },
-      ...errorResponses(400, 401, 403, 404),
+      ...errorResponses(400, 401, 403, 404, 409),
     },
   });
 

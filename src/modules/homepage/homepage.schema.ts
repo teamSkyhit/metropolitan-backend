@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { config } from '../../config/env';
 import { idParamsSchema } from '../../shared/http';
 
 export const HomepageSectionType = {
@@ -47,10 +48,7 @@ export const ctaUrlSchema = z
       }
       try {
         const parsed = new URL(url);
-        return (
-          parsed.protocol === 'https:' ||
-          (process.env.NODE_ENV !== 'production' && parsed.protocol === 'http:')
-        );
+        return parsed.protocol === 'https:' || (!config.isProduction && parsed.protocol === 'http:');
       } catch {
         return false;
       }

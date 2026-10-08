@@ -1,5 +1,5 @@
-import { Role as PrismaRole } from '@prisma/client';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { type Prisma, Role as PrismaRole } from '@prisma/client';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { Role } from '../src/shared/security/roles';
 import { api } from './helpers/app';
 import { createUser, DEFAULT_PASSWORD, signInAs } from './helpers/auth';
@@ -69,9 +69,21 @@ describe('POST /auth/login', () => {
     const user = await createUser();
     for (let i = 0; i < 5; i++) await login(user.email, 'WrongPassw0rd').expect(401);
 
-    const res = await login(user.email).expect(423);
+    // Wrong password on locked account must return 401 (not 423) to prevent enumeration
+    const wrongOnLocked = await login(user.email, 'WrongPassw0rd').expect(401);
+    expect(wrongOnLocked.body.error.code).toBe('AUTH_INVALID_CREDENTIALS');
 
+    // Correct password on locked account returns 423
+    const res = await login(user.email).expect(423);
     expect(res.body.error.code).toBe('AUTH_ACCOUNT_LOCKED');
+
+    // After lockout expires, login with correct password succeeds
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { lockedUntil: new Date(Date.now() - 1000) },
+    });
+    const unlocked = await login(user.email).expect(200);
+    expect(unlocked.body.data.user.id).toBe(user.id);
   });
 
   it('rejects deactivated accounts after checking the password', async () => {
@@ -188,6 +200,32 @@ describe('POST /auth/logout-all', () => {
       .send({ refreshToken: second.body.data.tokens.refreshToken })
       .expect(401);
   });
+
+  it('rolls back completely if token revocation fails during logout-all', async () => {
+    const session = await signInAs('SALES_MANAGER');
+    const userBefore = await prisma.user.findUniqueOrThrow({ where: { id: session.user.id } });
+
+    const origTransaction = prisma.$transaction.bind(prisma);
+    const txSpy = vi.spyOn(prisma, '$transaction').mockImplementation(((
+      arg: (tx: Prisma.TransactionClient) => Promise<unknown>,
+      options?: unknown
+    ) => {
+      return origTransaction(async (tx: Prisma.TransactionClient) => {
+        vi.spyOn(tx.refreshToken, 'updateMany').mockRejectedValueOnce(new Error('Simulated DB failure'));
+        return arg(tx);
+      }, options as never);
+    }) as never);
+
+    await api().post('/api/v1/auth/logout-all').set(session.auth).expect(500);
+
+    txSpy.mockRestore();
+
+    const userAfter = await prisma.user.findUniqueOrThrow({ where: { id: session.user.id } });
+    expect(userAfter.tokenVersion).toBe(userBefore.tokenVersion);
+
+    await api().get('/api/v1/auth/me').set(session.auth).expect(200);
+    await api().post('/api/v1/auth/refresh').send({ refreshToken: session.refreshToken }).expect(200);
+  });
 });
 
 describe('GET /auth/me', () => {
@@ -248,5 +286,39 @@ describe('POST /auth/change-password', () => {
       .set(session.auth)
       .send({ currentPassword: DEFAULT_PASSWORD, newPassword: 'short' })
       .expect(400);
+  });
+
+  it('rolls back password update and token revocation if session token creation fails', async () => {
+    const session = await signInAs('SALES_MANAGER');
+    const userBefore = await prisma.user.findUniqueOrThrow({ where: { id: session.user.id } });
+
+    const origTransaction = prisma.$transaction.bind(prisma);
+    const txSpy = vi.spyOn(prisma, '$transaction').mockImplementation(((
+      arg: (tx: Prisma.TransactionClient) => Promise<unknown>,
+      options?: unknown
+    ) => {
+      return origTransaction(async (tx: Prisma.TransactionClient) => {
+        vi.spyOn(tx.refreshToken, 'create').mockRejectedValueOnce(
+          new Error('Simulated token create failure')
+        );
+        return arg(tx);
+      }, options as never);
+    }) as never);
+
+    await api()
+      .post('/api/v1/auth/change-password')
+      .set(session.auth)
+      .send({ currentPassword: DEFAULT_PASSWORD, newPassword: 'N3wPasswordX' })
+      .expect(500);
+
+    txSpy.mockRestore();
+
+    const userAfter = await prisma.user.findUniqueOrThrow({ where: { id: session.user.id } });
+    expect(userAfter.passwordHash).toBe(userBefore.passwordHash);
+    expect(userAfter.tokenVersion).toBe(userBefore.tokenVersion);
+
+    await api().get('/api/v1/auth/me').set(session.auth).expect(200);
+    await login(session.user.email, DEFAULT_PASSWORD).expect(200);
+    await login(session.user.email, 'N3wPasswordX').expect(401);
   });
 });

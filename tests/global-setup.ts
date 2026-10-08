@@ -20,8 +20,18 @@ export default function setup(): void {
   } catch (err: unknown) {
     const errorMsg = (err as { stderr?: Buffer })?.stderr?.toString() ?? String(err);
     if (errorMsg.includes('P1001') || errorMsg.includes("Can't reach database server")) {
+      if (
+        process.env.CI === 'true' ||
+        process.env.REQUIRE_DB === 'true' ||
+        process.env.ALLOW_OFFLINE_TESTS !== 'true'
+      ) {
+        throw new Error(
+          'ENVIRONMENT BLOCKED: PostgreSQL is unreachable at localhost:5432. Integration tests require a live database. Set ALLOW_OFFLINE_TESTS=true only for unit-only local workflows.',
+          { cause: err }
+        );
+      }
       console.warn(
-        '⚠️  Database server unreachable at localhost:5432 — skipping test database migration. Integration tests requiring a live database will fail.'
+        '⚠️  ENVIRONMENT BLOCKED: Database server unreachable at localhost:5432 — skipping test database migration. Integration tests requiring a live database will fail.'
       );
       return;
     }

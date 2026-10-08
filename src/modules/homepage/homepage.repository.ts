@@ -95,8 +95,8 @@ export const homepageRepository = {
   ): Promise<HomepageSectionRecord[]> {
     return prisma.$transaction(async (tx) => {
       for (const item of items) {
-        await tx.homepageSection.update({
-          where: { id: item.id },
+        await tx.homepageSection.updateMany({
+          where: { id: item.id, ...notDeleted },
           data: {
             sortOrder: item.sortOrder,
             ...updatedBy(actorId),
