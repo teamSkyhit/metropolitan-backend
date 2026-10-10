@@ -22,11 +22,20 @@ export function registerCategoriesDocs(registry: OpenAPIRegistry): void {
   const publicTags = ['Public - Categories'];
   const security = [{ [BEARER_AUTH]: [] }];
   const json = (schema: z.ZodType) => ({ content: { 'application/json': { schema } } });
-  const multipart = () => ({
+  const multipartImage = () => ({
     content: {
       'multipart/form-data': {
         schema: z.object({
-          banner: z.string().meta({ format: 'binary', description: 'PNG, JPEG, or WebP image' }),
+          image: z.string().meta({ format: 'binary', description: 'PNG, JPEG, or WebP image (max 5 MB)' }),
+        }),
+      },
+    },
+  });
+  const multipartBanner = () => ({
+    content: {
+      'multipart/form-data': {
+        schema: z.object({
+          banner: z.string().meta({ format: 'binary', description: 'PNG, JPEG, or WebP image (max 5 MB)' }),
         }),
       },
     },
@@ -150,13 +159,43 @@ export function registerCategoriesDocs(registry: OpenAPIRegistry): void {
 
   registry.registerPath({
     method: 'put',
+    path: '/categories/{id}/image',
+    tags: adminTags,
+    security,
+    summary: 'Upload or replace category image',
+    description:
+      'Requires `categories:update`. Canonical method is PUT. Accepts multipart/form-data with field `image`. Maximum 1 image, max 5 MB. Allowed: PNG, JPEG, WebP.',
+    request: { params: idParamsSchema, body: multipartImage() },
+    responses: {
+      200: jsonResponse('Image uploaded', successBody(categorySchema)),
+      ...errorResponses(400, 401, 403, 404),
+    },
+  });
+
+  registry.registerPath({
+    method: 'delete',
+    path: '/categories/{id}/image',
+    tags: adminTags,
+    security,
+    summary: 'Remove category image',
+    description:
+      'Requires `categories:update`. Clears the category image reference and cleans up stored file.',
+    request: { params: idParamsSchema },
+    responses: {
+      200: jsonResponse('Image removed', successBody(categorySchema)),
+      ...errorResponses(400, 401, 403, 404),
+    },
+  });
+
+  registry.registerPath({
+    method: 'put',
     path: '/categories/{id}/banner',
     tags: adminTags,
     security,
-    summary: 'Upload category banner',
+    summary: 'Upload or replace category banner',
     description:
-      'Requires `categories:update`. Accepts multipart/form-data. Maximum size 5 MB. PNG, JPEG, or WebP.',
-    request: { params: idParamsSchema, body: multipart() },
+      'Requires `categories:update`. Canonical method is PUT. Accepts multipart/form-data with field `banner`. Maximum 1 banner, max 5 MB. Allowed: PNG, JPEG, WebP.',
+    request: { params: idParamsSchema, body: multipartBanner() },
     responses: {
       200: jsonResponse('Banner uploaded', successBody(categorySchema)),
       ...errorResponses(400, 401, 403, 404),
@@ -169,7 +208,7 @@ export function registerCategoriesDocs(registry: OpenAPIRegistry): void {
     tags: adminTags,
     security,
     summary: 'Remove category banner',
-    description: 'Requires `categories:update`. Clears the category banner.',
+    description: 'Requires `categories:update`. Clears the category banner and cleans up stored file.',
     request: { params: idParamsSchema },
     responses: {
       200: jsonResponse('Banner removed', successBody(categorySchema)),

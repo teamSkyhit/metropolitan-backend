@@ -50,9 +50,9 @@ registerProductAssignValidation({
 });
 
 registerMediaReferenceCheckers([
-  { name: 'Product', checker: (url) => productsService.isMediaUrlReferenced(url) },
+  { name: 'Product', checker: (url, id) => productsService.isMediaUrlReferenced(url, id) },
   { name: 'Brand', checker: (url) => brandsService.isMediaUrlReferenced(url) },
-  { name: 'Category', checker: (url) => categoriesService.isMediaUrlReferenced(url) },
+  { name: 'Category', checker: (url, id) => categoriesService.isMediaUrlReferenced(url, id) },
   { name: 'HomepageSection', checker: (url, id) => homepageService.isMediaUrlReferenced(url, id) },
 ]);
 

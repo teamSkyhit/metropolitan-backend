@@ -86,11 +86,15 @@ export const categoriesRepository = {
     });
   },
 
-  isMediaUrlReferenced(url: string): Promise<boolean> {
+  isMediaUrlReferenced(url: string, id?: string): Promise<boolean> {
+    const conditions: Prisma.CategoryWhereInput[] = [{ bannerUrl: url }, { imageUrl: url }];
+    if (id) {
+      conditions.push({ imageMediaId: id }, { bannerMediaId: id });
+    }
     return prisma.category
       .count({
         where: {
-          bannerUrl: url,
+          OR: conditions,
           ...notDeleted,
         },
       })
@@ -140,6 +144,7 @@ export const categoriesRepository = {
         name: data.name,
         nameKey: data.name.trim().toLowerCase(),
         slug: data.slug,
+        imageUrl: data.imageUrl ?? null,
         bannerUrl: data.bannerUrl ?? null,
         description: data.description ?? null,
         isActive: data.isActive,
@@ -159,6 +164,7 @@ export const categoriesRepository = {
           nameKey: data.name.trim().toLowerCase(),
         }),
         ...(data.slug !== undefined && { slug: data.slug }),
+        ...(data.imageUrl !== undefined && { imageUrl: data.imageUrl }),
         ...(data.bannerUrl !== undefined && { bannerUrl: data.bannerUrl }),
         ...(data.description !== undefined && { description: data.description }),
         ...(data.isActive !== undefined && { isActive: data.isActive }),
@@ -202,11 +208,33 @@ export const categoriesRepository = {
     });
   },
 
-  updateBanner(id: string, bannerUrl: string | null, actorId: string): Promise<Category> {
+  updateImage(
+    id: string,
+    imageUrl: string | null,
+    imageMediaId: string | null,
+    actorId: string
+  ): Promise<Category> {
+    return prisma.category.update({
+      where: { id },
+      data: {
+        imageUrl,
+        imageMediaId,
+        ...updatedBy(actorId),
+      },
+    });
+  },
+
+  updateBanner(
+    id: string,
+    bannerUrl: string | null,
+    bannerMediaId: string | null = null,
+    actorId: string = ''
+  ): Promise<Category> {
     return prisma.category.update({
       where: { id },
       data: {
         bannerUrl,
+        bannerMediaId,
         ...updatedBy(actorId),
       },
     });

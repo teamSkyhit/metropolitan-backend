@@ -18,13 +18,49 @@ categoriesRouter.delete('/:id', authorize(Permission.CATEGORIES_DELETE), categor
 categoriesRouter.post('/:id/restore', authorize(Permission.CATEGORIES_UPDATE), categoriesController.restore);
 
 // Upload routes
+categoriesRouter.post(
+  '/:id/image',
+  authorize(Permission.CATEGORIES_UPDATE),
+  requireFileUpload({
+    maxBytes: UPLOAD_LIMITS.CATEGORY_IMAGE_MAX_BYTES,
+    fieldName: 'image',
+    entityName: 'Category image',
+  }),
+  categoriesController.uploadImage
+);
+categoriesRouter.put(
+  '/:id/image',
+  authorize(Permission.CATEGORIES_UPDATE),
+  requireFileUpload({
+    maxBytes: UPLOAD_LIMITS.CATEGORY_IMAGE_MAX_BYTES,
+    fieldName: 'image',
+    entityName: 'Category image',
+  }),
+  categoriesController.uploadImage
+);
+categoriesRouter.delete(
+  '/:id/image',
+  authorize(Permission.CATEGORIES_UPDATE),
+  categoriesController.removeImage
+);
+
+categoriesRouter.post(
+  '/:id/banner',
+  authorize(Permission.CATEGORIES_UPDATE),
+  requireFileUpload({
+    maxBytes: UPLOAD_LIMITS.CATEGORY_BANNER_MAX_BYTES,
+    fieldName: 'banner',
+    entityName: 'Category banner',
+  }),
+  categoriesController.uploadBanner
+);
 categoriesRouter.put(
   '/:id/banner',
   authorize(Permission.CATEGORIES_UPDATE),
   requireFileUpload({
-    maxBytes: UPLOAD_LIMITS.BANNER_MAX_BYTES,
+    maxBytes: UPLOAD_LIMITS.CATEGORY_BANNER_MAX_BYTES,
     fieldName: 'banner',
-    entityName: 'Banner',
+    entityName: 'Category banner',
   }),
   categoriesController.uploadBanner
 );

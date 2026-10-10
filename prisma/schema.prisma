@@ -201,29 +201,36 @@ model Brand {
 
 /// Product category representation.
 model Category {
-  id          String    @id @default(uuid()) @db.Uuid
-  name        String    @db.VarChar(100)
-  nameKey     String    @unique @map("name_key") @db.VarChar(100)
-  slug        String    @unique @db.VarChar(120)
-  bannerUrl   String?   @map("banner_url") @db.VarChar(500)
-  description String?   @db.VarChar(2000)
-  isActive    Boolean   @default(true) @map("is_active")
-  sortOrder   Int       @default(0) @map("sort_order")
-  parentId    String?   @map("parent_id") @db.Uuid
-  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
-  deletedAt   DateTime? @map("deleted_at") @db.Timestamptz(3)
-  createdById String?   @map("created_by_id") @db.Uuid
-  updatedById String?   @map("updated_by_id") @db.Uuid
+  id            String    @id @default(uuid()) @db.Uuid
+  name          String    @db.VarChar(100)
+  nameKey       String    @unique @map("name_key") @db.VarChar(100)
+  slug          String    @unique @db.VarChar(120)
+  imageUrl      String?   @map("image_url") @db.VarChar(500)
+  imageMediaId  String?   @map("image_media_id") @db.Uuid
+  bannerUrl     String?   @map("banner_url") @db.VarChar(500)
+  bannerMediaId String?   @map("banner_media_id") @db.Uuid
+  description   String?   @db.VarChar(2000)
+  isActive      Boolean   @default(true) @map("is_active")
+  sortOrder     Int       @default(0) @map("sort_order")
+  parentId      String?   @map("parent_id") @db.Uuid
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt     DateTime? @map("deleted_at") @db.Timestamptz(3)
+  createdById   String?   @map("created_by_id") @db.Uuid
+  updatedById   String?   @map("updated_by_id") @db.Uuid
 
-  parent   Category?  @relation("CategoryParent", fields: [parentId], references: [id], onDelete: Restrict)
-  children Category[] @relation("CategoryParent")
-  products Product[]
+  parent      Category?  @relation("CategoryParent", fields: [parentId], references: [id], onDelete: Restrict)
+  children    Category[] @relation("CategoryParent")
+  products    Product[]
+  imageMedia  Media?     @relation("CategoryImageMedia", fields: [imageMediaId], references: [id], onDelete: SetNull)
+  bannerMedia Media?     @relation("CategoryBannerMedia", fields: [bannerMediaId], references: [id], onDelete: SetNull)
 
   @@index([deletedAt, sortOrder, name])
   @@index([deletedAt, isActive])
   @@index([deletedAt, createdAt])
   @@index([parentId])
+  @@index([imageMediaId])
+  @@index([bannerMediaId])
   @@index([name])
   @@map("categories")
 }
@@ -254,8 +261,11 @@ model Product {
   createdById     String?       @map("created_by_id") @db.Uuid
   updatedById     String?       @map("updated_by_id") @db.Uuid
 
-  brand    Brand    @relation(fields: [brandId], references: [id], onDelete: Restrict)
-  category Category @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  brand         Brand                 @relation(fields: [brandId], references: [id], onDelete: Restrict)
+  category      Category              @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  galleryImages ProductGalleryImage[]
+  videos        ProductVideo[]
+  documents     ProductDocument[]
 
   @@index([brandId])
   @@index([categoryId])
@@ -264,6 +274,73 @@ model Product {
   @@index([deletedAt, createdAt])
   @@index([name])
   @@map("products")
+}
+
+/// Product gallery image (maximum 5 active images per product).
+model ProductGalleryImage {
+  id          String    @id @default(uuid()) @db.Uuid
+  productId   String    @map("product_id") @db.Uuid
+  mediaId     String    @map("media_id") @db.Uuid
+  sortOrder   Int       @default(0) @map("sort_order")
+  isPrimary   Boolean   @default(false) @map("is_primary")
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt   DateTime? @map("deleted_at") @db.Timestamptz(3)
+  createdById String?   @map("created_by_id") @db.Uuid
+  updatedById String?   @map("updated_by_id") @db.Uuid
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+  media   Media   @relation(fields: [mediaId], references: [id], onDelete: Restrict)
+
+  @@index([productId, deletedAt, sortOrder])
+  @@index([mediaId])
+  @@index([deletedAt, createdAt])
+  @@map("product_gallery_images")
+}
+
+/// Product PDF document (maximum 3 active documents per product).
+model ProductDocument {
+  id               String    @id @default(uuid()) @db.Uuid
+  productId        String    @map("product_id") @db.Uuid
+  mediaId          String    @map("media_id") @db.Uuid
+  title            String    @db.VarChar(200)
+  originalFileName String?   @map("original_file_name") @db.VarChar(255)
+  sortOrder        Int       @default(0) @map("sort_order")
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt        DateTime? @map("deleted_at") @db.Timestamptz(3)
+  createdById      String?   @map("created_by_id") @db.Uuid
+  updatedById      String?   @map("updated_by_id") @db.Uuid
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+  media   Media   @relation(fields: [mediaId], references: [id], onDelete: Restrict)
+
+  @@index([productId, deletedAt, sortOrder])
+  @@index([mediaId])
+  @@index([deletedAt, createdAt])
+  @@map("product_documents")
+}
+
+/// Product video (maximum 2 active videos per product).
+model ProductVideo {
+  id          String    @id @default(uuid()) @db.Uuid
+  productId   String    @map("product_id") @db.Uuid
+  mediaId     String    @map("media_id") @db.Uuid
+  title       String?   @db.VarChar(200)
+  sortOrder   Int       @default(0) @map("sort_order")
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt   DateTime? @map("deleted_at") @db.Timestamptz(3)
+  createdById String?   @map("created_by_id") @db.Uuid
+  updatedById String?   @map("updated_by_id") @db.Uuid
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+  media   Media   @relation(fields: [mediaId], references: [id], onDelete: Restrict)
+
+  @@index([productId, deletedAt, sortOrder])
+  @@index([mediaId])
+  @@index([deletedAt, createdAt])
+  @@map("product_videos")
 }
 
 /// Uploaded media asset tracked in CRM Media Library.
@@ -281,7 +358,12 @@ model Media {
   createdById  String?   @map("created_by_id") @db.Uuid
   updatedById  String?   @map("updated_by_id") @db.Uuid
 
-  uploadedBy User? @relation("MediaUploader", fields: [uploadedById], references: [id], onDelete: SetNull)
+  uploadedBy           User?                 @relation("MediaUploader", fields: [uploadedById], references: [id], onDelete: SetNull)
+  productGalleryImages ProductGalleryImage[]
+  productVideos        ProductVideo[]
+  productDocuments     ProductDocument[]
+  categoryImages       Category[]            @relation("CategoryImageMedia")
+  categoryBanners      Category[]            @relation("CategoryBannerMedia")
 
   @@index([deletedAt, createdAt])
   @@index([fileName])
