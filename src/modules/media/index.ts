@@ -16,7 +16,7 @@ export {
   registerMediaReferenceCheckers,
   type MediaReferenceChecker,
 } from './media.service';
-export type { MediaRecord } from './media.repository';
+export { mediaRepository, type MediaRecord } from './media.repository';
 export {
   MediaErrorCode,
   mediaSchema,

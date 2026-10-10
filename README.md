@@ -59,22 +59,87 @@ npm run dev             # http://localhost:5000
 
 ## Modules
 
-| Module        | CRM endpoints (`/api/v1`)                                   | Public endpoints (`/api/v1/public`)        | Restore Supported                    |
-| ------------- | ----------------------------------------------------------- | ------------------------------------------ | ------------------------------------ |
-| health        | `GET /health`, `GET /health/ready`                          | n/a                                        | n/a                                  |
-| auth          | login, refresh, logout, logout-all, me, change-password     | n/a                                        | n/a                                  |
-| users         | CRUD for Sales Managers, lookup, status, reset, restore     | n/a                                        | Yes (`POST /users/:id/restore`)      |
-| enquiries     | list, detail, notes, status, assignee, follow-ups, delete   | `POST /enquiries`                          | No                                   |
-| brands        | list, create, detail, update, delete, restore, logo/banner  | `GET /brands`, `GET /brands/:slug`         | Yes (`POST /brands/:id/restore`)     |
-| categories    | list, create, detail, update, delete, restore, banner       | `GET /categories`, `GET /categories/:slug` | Yes (`POST /categories/:id/restore`) |
-| products      | list, create, detail, update, delete, restore, image, specs | `GET /products`, `GET /products/:slug`     | Yes (`POST /products/:id/restore`)   |
-| media         | list, detail, upload, delete (with in-use reference guard)  | n/a                                        | No                                   |
-| dashboard     | summary, trends, recent-enquiries                           | n/a                                        | n/a                                  |
-| contacts      | list, detail, status, delete                                | `POST /contacts` (alias: `/contact`)       | No                                   |
-| notifications | list, unread-count, read-all, mark-read                     | n/a                                        | No                                   |
-| homepage      | list, detail, create, update, delete, reorder               | `GET /homepage`                            | No                                   |
+| Module        | CRM endpoints (`/api/v1`)                                                        | Public endpoints (`/api/v1/public`)        | Restore Supported                    |
+| ------------- | -------------------------------------------------------------------------------- | ------------------------------------------ | ------------------------------------ |
+| health        | `GET /health`, `GET /health/ready`                                               | n/a                                        | n/a                                  |
+| auth          | login, refresh, logout, logout-all, me, change-password                          | n/a                                        | n/a                                  |
+| users         | CRUD for Sales Managers, lookup, status, reset, restore                          | n/a                                        | Yes (`POST /users/:id/restore`)      |
+| enquiries     | list, detail, notes, status, assignee, follow-ups, delete                        | `POST /enquiries`                          | No                                   |
+| brands        | list, create, detail, update, delete, restore, logo/banner                       | `GET /brands`, `GET /brands/:slug`         | Yes (`POST /brands/:id/restore`)     |
+| categories    | list, create, detail, update, delete, restore, image, banner                     | `GET /categories`, `GET /categories/:slug` | Yes (`POST /categories/:id/restore`) |
+| products      | list, create, detail, update, delete, restore, gallery, videos, documents, specs | `GET /products`, `GET /products/:slug`     | Yes (`POST /products/:id/restore`)   |
+| media         | list, detail, upload, delete (with in-use reference guard)                       | n/a                                        | No                                   |
+| dashboard     | summary, trends, recent-enquiries                                                | n/a                                        | n/a                                  |
+| contacts      | list, detail, status, delete                                                     | `POST /contacts` (alias: `/contact`)       | No                                   |
+| notifications | list, unread-count, read-all, mark-read                                          | n/a                                        | No                                   |
+| homepage      | list, detail, create, update, delete, reorder                                    | `GET /homepage`                            | No                                   |
 
 Full request/response contracts: Swagger UI at `/api/docs`. Swagger is available in local and staging environments, and disabled in production.
+
+### Product Media Architecture
+
+- **Storage Architecture**:
+  - Binary file contents are **never** stored in PostgreSQL.
+  - Files are streamed and stored in S3/Cloudflare R2 object storage; PostgreSQL only stores relational metadata and references (`Media`, `ProductGalleryImage`, `ProductVideo`, `ProductDocument`).
+  - Strict magic-byte inspection prevents MIME spoofing, script embedding, and renamed non-media payloads.
+- **Product Gallery (Images)**:
+  - **Limit**: Maximum 5 active gallery images per Product.
+  - **Size Limit**: Maximum 5 MB per image.
+  - **Allowed Formats**: JPG, JPEG, PNG, WebP (magic-byte validated).
+  - **Multipart Field**: `images`.
+  - **Primary Image**: Exactly zero or one primary image (`isPrimary`). If gallery has images and none is explicitly designated, the first image is treated as primary. When the primary image is removed, another active image is automatically promoted to primary.
+  - **Backward Compatibility**: `imageUrl` is preserved on product responses. If legacy `imageUrl` is null, it automatically falls back to the primary gallery image.
+  - **Endpoints**:
+    - `POST /api/v1/products/:id/gallery` (upload up to remaining allowance, canonical field `images`)
+    - `PATCH /api/v1/products/:id/gallery/reorder` (reorder gallery items by UUID array)
+    - `PATCH /api/v1/products/:id/gallery/:galleryImageId/primary` (designate primary image)
+    - `DELETE /api/v1/products/:id/gallery/:galleryImageId` (remove gallery image and clean media)
+- **Product Videos**:
+  - **Limit**: Maximum 2 active videos per Product.
+  - **Size Limit**: Maximum 100 MB per video.
+  - **Allowed Formats**: MP4 (`video/mp4`, container signature validated via `ftyp`), WebM (`video/webm`, EBML header validated with `webm` DocType). Rejects non-WebM MKV, AVI, MOV, EXE, SVG, and corrupted streams.
+  - **Multipart Field**: Canonical field `videos` (alias `video`).
+  - **Batch Behavior**: Reject entire request if existing count + upload count > 2. No partial attachments.
+  - **Public Exposure**: Public catalog product detail exposes `id`, `title`, `publicUrl`, and `sortOrder`. Public listing returns lightweight summary.
+  - **Endpoints**:
+    - `POST /api/v1/products/:id/videos` (upload up to remaining allowance, canonical field `videos`)
+    - `PATCH /api/v1/products/:id/videos/reorder` (reorder videos by UUID array)
+    - `PATCH /api/v1/products/:id/videos/:videoId` (update optional title)
+    - `DELETE /api/v1/products/:id/videos/:videoId` (remove video and clean media)
+- **Product Documents (PDFs)**:
+  - **Limit**: Maximum 3 active PDF documents per Product.
+  - **Size Limit**: Maximum 10 MB per PDF.
+  - **Allowed Formats**: `application/pdf` only (strictly validated with `%PDF-` binary magic header).
+  - **Multipart Field**: Canonical field `documents` (backward-compatible alias `file`).
+  - **Metadata**: Each document supports a title (defaults to filename without extension if omitted), original filename, and deterministic sort order.
+  - **Public Exposure**: Public catalog DTO exposes only public URL, title, original filename, and sort order. Private storage keys (`storageKey`) and credentials are never exposed publicly.
+  - **Endpoints**:
+    - `POST /api/v1/products/:id/documents` (upload up to remaining allowance, canonical field `documents`)
+    - `PATCH /api/v1/products/:id/documents/:documentId` (update title)
+    - `PATCH /api/v1/products/:id/documents/reorder` (reorder documents by UUID array)
+    - `DELETE /api/v1/products/:id/documents/:documentId` (remove document and clean media)
+
+### Category Media Architecture
+
+- **Category Image**:
+  - **Purpose**: Category cards, thumbnails, and listing display.
+  - **Limit**: Exactly 1 active image.
+  - **Size Limit**: Maximum 5 MB (JPG, JPEG, PNG, WebP).
+  - **Multipart Field**: `image`.
+  - **Canonical Method**: `PUT /api/v1/categories/:id/image` (create or replace). Backward-compatible alias `POST` mounted.
+  - **Delete**: `DELETE /api/v1/categories/:id/image`.
+- **Category Banner**:
+  - **Purpose**: Category detail page hero/banner.
+  - **Limit**: Exactly 1 active banner.
+  - **Size Limit**: Maximum 5 MB (JPG, JPEG, PNG, WebP).
+  - **Multipart Field**: `banner`.
+  - **Canonical Method**: `PUT /api/v1/categories/:id/banner` (create or replace). Backward-compatible alias `POST` mounted.
+  - **Delete**: `DELETE /api/v1/categories/:id/banner`.
+- **Independence & Safe Replacement**:
+  - Category Image and Category Banner have independent lifecycles. Modifying or deleting the Image never impacts the Banner, and vice-versa.
+  - Safe replacement sequence: upload new asset → persist DB reference → clean up previous asset. If database persistence fails, the new uploaded object is immediately pruned.
+- **Media Reference Protection**:
+  - `DELETE /api/v1/media/:id` is blocked with HTTP 409 Conflict (`MEDIA_IN_USE`) if referenced by `Product.imageUrl`, `ProductGalleryImage`, `ProductVideo`, `ProductDocument`, `Category.imageMediaId/imageUrl`, `Category.bannerMediaId/bannerUrl`, Brand asset, or Homepage section slide.
 
 ### Restore Policy Summary
 

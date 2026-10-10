@@ -1,7 +1,13 @@
 import { Router } from 'express';
 import { authenticate, authorize } from '../../middleware';
 import { Permission } from '../../shared/security/permissions';
-import { requireFileUpload, UPLOAD_LIMITS } from '../../shared/storage';
+import {
+  requireDocumentUpload,
+  requireFileUpload,
+  requireGalleryUpload,
+  requireVideoUpload,
+  UPLOAD_LIMITS,
+} from '../../shared/storage';
 import { productsController } from './products.controller';
 
 export const productsRouter = Router();
@@ -29,6 +35,75 @@ productsRouter.put(
   productsController.uploadImage
 );
 productsRouter.delete('/:id/image', authorize(Permission.PRODUCTS_UPDATE), productsController.removeImage);
+
+// Gallery routes
+productsRouter.post(
+  '/:id/gallery',
+  authorize(Permission.PRODUCTS_UPDATE),
+  requireGalleryUpload(),
+  productsController.uploadGallery
+);
+productsRouter.patch(
+  '/:id/gallery/reorder',
+  authorize(Permission.PRODUCTS_UPDATE),
+  productsController.reorderGallery
+);
+productsRouter.patch(
+  '/:id/gallery/:galleryImageId/primary',
+  authorize(Permission.PRODUCTS_UPDATE),
+  productsController.setPrimaryGalleryImage
+);
+productsRouter.delete(
+  '/:id/gallery/:galleryImageId',
+  authorize(Permission.PRODUCTS_UPDATE),
+  productsController.removeGalleryImage
+);
+
+// Video routes
+productsRouter.post(
+  '/:id/videos',
+  authorize(Permission.PRODUCTS_UPDATE),
+  requireVideoUpload(),
+  productsController.uploadVideos
+);
+productsRouter.patch(
+  '/:id/videos/reorder',
+  authorize(Permission.PRODUCTS_UPDATE),
+  productsController.reorderVideos
+);
+productsRouter.patch(
+  '/:id/videos/:videoId',
+  authorize(Permission.PRODUCTS_UPDATE),
+  productsController.updateVideoTitle
+);
+productsRouter.delete(
+  '/:id/videos/:videoId',
+  authorize(Permission.PRODUCTS_UPDATE),
+  productsController.removeVideo
+);
+
+// Document routes
+productsRouter.post(
+  '/:id/documents',
+  authorize(Permission.PRODUCTS_UPDATE),
+  requireDocumentUpload(),
+  productsController.uploadDocuments
+);
+productsRouter.patch(
+  '/:id/documents/reorder',
+  authorize(Permission.PRODUCTS_UPDATE),
+  productsController.reorderDocuments
+);
+productsRouter.patch(
+  '/:id/documents/:documentId',
+  authorize(Permission.PRODUCTS_UPDATE),
+  productsController.updateDocument
+);
+productsRouter.delete(
+  '/:id/documents/:documentId',
+  authorize(Permission.PRODUCTS_UPDATE),
+  productsController.removeDocument
+);
 
 // Specifications route
 productsRouter.put(

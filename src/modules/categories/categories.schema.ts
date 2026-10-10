@@ -11,6 +11,8 @@ export const CategoriesErrorCode = {
   CIRCULAR_PARENT: 'CATEGORIES_CIRCULAR_PARENT',
   HAS_CHILDREN: 'CATEGORIES_HAS_CHILDREN',
   HAS_PRODUCTS: 'CATEGORIES_HAS_PRODUCTS',
+  IMAGE_NOT_FOUND: 'CATEGORY_IMAGE_NOT_FOUND',
+  BANNER_NOT_FOUND: 'CATEGORY_BANNER_NOT_FOUND',
 } as const;
 
 export type CategoriesErrorCode = (typeof CategoriesErrorCode)[keyof typeof CategoriesErrorCode];
@@ -34,7 +36,10 @@ export const categorySchema = z
     id: z.uuid(),
     name: z.string(),
     slug: z.string(),
+    imageUrl: z.string().nullable().optional(),
+    imageMediaId: z.uuid().nullable().optional(),
     bannerUrl: z.string().nullable(),
+    bannerMediaId: z.uuid().nullable().optional(),
     description: z.string().nullable(),
     isActive: z.boolean(),
     sortOrder: z.number().int(),
@@ -50,6 +55,7 @@ export const publicCategorySchema = z
     id: z.uuid(),
     name: z.string(),
     slug: z.string(),
+    imageUrl: z.string().nullable().optional(),
     bannerUrl: z.string().nullable(),
     description: z.string().nullable(),
     parentId: z.uuid().nullable(),
@@ -71,6 +77,7 @@ export const createCategoryBodySchema = z
   .object({
     name: z.string().trim().min(1, 'Name is required').max(100, 'Name cannot exceed 100 characters'),
     slug: categorySlugSchema,
+    imageUrl: mediaUrlSchema,
     bannerUrl: mediaUrlSchema,
     description: z
       .string()
@@ -98,6 +105,7 @@ export const updateCategoryBodySchema = z
       .max(100, 'Name cannot exceed 100 characters')
       .optional(),
     slug: categorySlugSchema.optional(),
+    imageUrl: mediaUrlSchema,
     bannerUrl: mediaUrlSchema,
     description: z
       .string()
