@@ -84,7 +84,7 @@ describe('Category Media Service (unit)', () => {
       );
     });
 
-    it('safely cleans up prior image storage on replacement without affecting banner', async () => {
+    it('delegates to mediaService.deleteIfUnreferenced on replacement when image is Media-backed', async () => {
       const categoryWithExistingImage = {
         ...dummyCategory,
         imageUrl: 'https://cdn.example.com/old-img.jpg',
@@ -119,13 +119,57 @@ describe('Category Media Service (unit)', () => {
         imageUrl: 'https://cdn.example.com/categories/images/new.jpg',
         imageMediaId: 'media-new-1',
       });
+      const unrefSpy = vi.spyOn(mediaService, 'deleteIfUnreferenced').mockResolvedValue({ deleted: true });
       const storageDeleteSpy = vi.spyOn(storageService, 'delete').mockResolvedValue();
 
       const result = await categoriesService.uploadImage(dummyCategory.id, sampleFile, 'actor-1');
 
       expect(result.imageUrl).toBe('https://cdn.example.com/categories/images/new.jpg');
       expect(result.bannerUrl).toBe('https://cdn.example.com/existing-banner.jpg');
-      expect(storageDeleteSpy).toHaveBeenCalledWith('https://cdn.example.com/old-img.jpg');
+      expect(unrefSpy).toHaveBeenCalledWith('media-old-1', 'actor-1');
+      expect(storageDeleteSpy).not.toHaveBeenCalled();
+    });
+
+    it('directly cleans up storage on replacement for legacy URL-only image', async () => {
+      const categoryWithLegacyImage = {
+        ...dummyCategory,
+        imageUrl: 'https://cdn.example.com/legacy-img.jpg',
+        imageMediaId: null,
+      };
+      vi.spyOn(categoriesRepository, 'findById').mockResolvedValue(categoryWithLegacyImage);
+      vi.spyOn(storageService, 'upload').mockResolvedValue({
+        filename: 'new.jpg',
+        path: 'categories/images/new.jpg',
+        url: 'https://cdn.example.com/categories/images/new.jpg',
+        size: 10,
+        mimeType: 'image/jpeg',
+      });
+      vi.spyOn(mediaService, 'createManagedMedia').mockResolvedValue({
+        id: 'media-new-1',
+        fileName: 'new.jpg',
+        storageKey: 'categories/images/new.jpg',
+        publicUrl: 'https://cdn.example.com/categories/images/new.jpg',
+        mimeType: 'image/jpeg',
+        fileSize: 10,
+        uploadedById: 'actor-1',
+        createdById: 'actor-1',
+        updatedById: 'actor-1',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        deletedAt: null,
+      });
+      vi.spyOn(categoriesRepository, 'updateImage').mockResolvedValue({
+        ...categoryWithLegacyImage,
+        imageUrl: 'https://cdn.example.com/categories/images/new.jpg',
+        imageMediaId: 'media-new-1',
+      });
+      const unrefSpy = vi.spyOn(mediaService, 'deleteIfUnreferenced').mockResolvedValue({ deleted: false });
+      const storageDeleteSpy = vi.spyOn(storageService, 'delete').mockResolvedValue();
+
+      await categoriesService.uploadImage(dummyCategory.id, sampleFile, 'actor-1');
+
+      expect(unrefSpy).not.toHaveBeenCalled();
+      expect(storageDeleteSpy).toHaveBeenCalledWith('https://cdn.example.com/legacy-img.jpg');
     });
 
     it('throws 404 when category does not exist', async () => {
@@ -138,7 +182,7 @@ describe('Category Media Service (unit)', () => {
   });
 
   describe('removeImage', () => {
-    it('removes image and leaves banner untouched', async () => {
+    it('delegates to mediaService.deleteIfUnreferenced when removing Media-backed image', async () => {
       const categoryWithImageAndBanner = {
         ...dummyCategory,
         imageUrl: 'https://cdn.example.com/img.jpg',
@@ -152,6 +196,7 @@ describe('Category Media Service (unit)', () => {
         imageUrl: null,
         imageMediaId: null,
       });
+      const unrefSpy = vi.spyOn(mediaService, 'deleteIfUnreferenced').mockResolvedValue({ deleted: true });
       const storageDeleteSpy = vi.spyOn(storageService, 'delete').mockResolvedValue();
 
       const result = await categoriesService.removeImage(dummyCategory.id, 'actor-1');
@@ -160,7 +205,29 @@ describe('Category Media Service (unit)', () => {
       expect(result.imageMediaId).toBeNull();
       expect(result.bannerUrl).toBe('https://cdn.example.com/banner.jpg');
       expect(updateImageSpy).toHaveBeenCalledWith(dummyCategory.id, null, null, 'actor-1');
-      expect(storageDeleteSpy).toHaveBeenCalledWith('https://cdn.example.com/img.jpg');
+      expect(unrefSpy).toHaveBeenCalledWith('media-img-1', 'actor-1');
+      expect(storageDeleteSpy).not.toHaveBeenCalled();
+    });
+
+    it('directly cleans up storage when removing legacy URL-only image', async () => {
+      const categoryWithLegacyImage = {
+        ...dummyCategory,
+        imageUrl: 'https://cdn.example.com/legacy-img.jpg',
+        imageMediaId: null,
+      };
+      vi.spyOn(categoriesRepository, 'findById').mockResolvedValue(categoryWithLegacyImage);
+      vi.spyOn(categoriesRepository, 'updateImage').mockResolvedValue({
+        ...categoryWithLegacyImage,
+        imageUrl: null,
+        imageMediaId: null,
+      });
+      const unrefSpy = vi.spyOn(mediaService, 'deleteIfUnreferenced').mockResolvedValue({ deleted: false });
+      const storageDeleteSpy = vi.spyOn(storageService, 'delete').mockResolvedValue();
+
+      await categoriesService.removeImage(dummyCategory.id, 'actor-1');
+
+      expect(unrefSpy).not.toHaveBeenCalled();
+      expect(storageDeleteSpy).toHaveBeenCalledWith('https://cdn.example.com/legacy-img.jpg');
     });
 
     it('throws 404 if category has no image to remove', async () => {
@@ -218,7 +285,7 @@ describe('Category Media Service (unit)', () => {
       expect(result.imageUrl).toBe('https://cdn.example.com/card.jpg');
     });
 
-    it('removeBanner does not modify existing image', async () => {
+    it('removeBanner delegates to mediaService.deleteIfUnreferenced and preserves image', async () => {
       const categoryWithBoth = {
         ...dummyCategory,
         imageUrl: 'https://cdn.example.com/card.jpg',
@@ -232,12 +299,36 @@ describe('Category Media Service (unit)', () => {
         bannerUrl: null,
         bannerMediaId: null,
       });
-      vi.spyOn(storageService, 'delete').mockResolvedValue();
+      const unrefSpy = vi.spyOn(mediaService, 'deleteIfUnreferenced').mockResolvedValue({ deleted: true });
+      const storageDeleteSpy = vi.spyOn(storageService, 'delete').mockResolvedValue();
 
       const result = await categoriesService.removeBanner(dummyCategory.id, 'actor-1');
 
       expect(result.bannerUrl).toBeNull();
       expect(result.imageUrl).toBe('https://cdn.example.com/card.jpg');
+      expect(unrefSpy).toHaveBeenCalledWith('media-ban-1', 'actor-1');
+      expect(storageDeleteSpy).not.toHaveBeenCalled();
+    });
+
+    it('removeBanner cleans storage directly for legacy URL-only banner', async () => {
+      const categoryWithLegacyBanner = {
+        ...dummyCategory,
+        bannerUrl: 'https://cdn.example.com/legacy-banner.jpg',
+        bannerMediaId: null,
+      };
+      vi.spyOn(categoriesRepository, 'findById').mockResolvedValue(categoryWithLegacyBanner);
+      vi.spyOn(categoriesRepository, 'updateBanner').mockResolvedValue({
+        ...categoryWithLegacyBanner,
+        bannerUrl: null,
+        bannerMediaId: null,
+      });
+      const unrefSpy = vi.spyOn(mediaService, 'deleteIfUnreferenced').mockResolvedValue({ deleted: false });
+      const storageDeleteSpy = vi.spyOn(storageService, 'delete').mockResolvedValue();
+
+      await categoriesService.removeBanner(dummyCategory.id, 'actor-1');
+
+      expect(unrefSpy).not.toHaveBeenCalled();
+      expect(storageDeleteSpy).toHaveBeenCalledWith('https://cdn.example.com/legacy-banner.jpg');
     });
   });
 

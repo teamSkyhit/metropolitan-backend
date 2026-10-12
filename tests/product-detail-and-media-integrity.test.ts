@@ -1063,3 +1063,341 @@ describe('Single Product Detail Model & Endpoints', () => {
     expect(firstItem.seo).toBeUndefined();
   });
 });
+
+describe('Category Shared Media Integrity & Deletion Safety', () => {
+  it('preserves shared media and storage when category image is replaced', async () => {
+    const product = await createTestProduct();
+    const category = await createTestCategory();
+
+    // 1. Upload gallery image to Product
+    const prodRes = await api()
+      .post(`/api/v1/products/${product.id}/gallery`)
+      .set(admin.auth)
+      .attach('images', validPngBuffer, 'shared-img.png')
+      .expect(200);
+
+    const mediaId = prodRes.body.data.gallery[0].mediaId;
+    const mediaRow = await prisma.media.findUniqueOrThrow({ where: { id: mediaId } });
+
+    // 2. Attach same Media M to Category Image
+    await prisma.category.update({
+      where: { id: category.id },
+      data: {
+        imageUrl: mediaRow.publicUrl,
+        imageMediaId: mediaRow.id,
+      },
+    });
+
+    // 3. Spy on storageService.delete
+    const storageDeleteSpy = vi.spyOn(storageService, 'delete');
+
+    // 4. Replace Category image with a new upload
+    const replaceRes = await api()
+      .put(`/api/v1/categories/${category.id}/image`)
+      .set(admin.auth)
+      .attach('image', validJpgBuffer, 'new-cat-img.jpg')
+      .expect(200);
+
+    // Verify Category has new image and new media ID
+    expect(replaceRes.body.data.imageMediaId).not.toBe(mediaId);
+    expect(replaceRes.body.data.imageUrl).not.toBe(mediaRow.publicUrl);
+
+    // Verify Product Gallery still references Media M
+    const galleryItems = await prisma.productGalleryImage.findMany({
+      where: { productId: product.id, deletedAt: null },
+    });
+    expect(galleryItems).toHaveLength(1);
+    expect(galleryItems[0]?.mediaId).toBe(mediaId);
+
+    // Verify Media M is still active
+    const mediaCheck = await prisma.media.findUnique({ where: { id: mediaId } });
+    expect(mediaCheck?.deletedAt).toBeNull();
+
+    // Verify storageService.delete was NOT called for shared Media M (neither storageKey nor publicUrl)
+    expect(storageDeleteSpy).not.toHaveBeenCalledWith(mediaRow.storageKey);
+    expect(storageDeleteSpy).not.toHaveBeenCalledWith(mediaRow.publicUrl);
+
+    // Verify Media M cannot be deleted because product still references it
+    const deleteAttempt = await api().delete(`/api/v1/media/${mediaId}`).set(admin.auth).expect(409);
+    expect(deleteAttempt.body.error.code).toBe(MediaErrorCode.MEDIA_IN_USE);
+
+    storageDeleteSpy.mockRestore();
+  });
+
+  it('preserves shared media and storage when category image is removed', async () => {
+    const product = await createTestProduct();
+    const category = await createTestCategory();
+
+    // 1. Upload gallery image to Product
+    const prodRes = await api()
+      .post(`/api/v1/products/${product.id}/gallery`)
+      .set(admin.auth)
+      .attach('images', validPngBuffer, 'shared-img.png')
+      .expect(200);
+
+    const mediaId = prodRes.body.data.gallery[0].mediaId;
+    const mediaRow = await prisma.media.findUniqueOrThrow({ where: { id: mediaId } });
+
+    // 2. Attach same Media M to Category Image
+    await prisma.category.update({
+      where: { id: category.id },
+      data: {
+        imageUrl: mediaRow.publicUrl,
+        imageMediaId: mediaRow.id,
+      },
+    });
+
+    const storageDeleteSpy = vi.spyOn(storageService, 'delete');
+
+    // 3. Remove Category image via DELETE /api/v1/categories/:id/image
+    const removeRes = await api()
+      .delete(`/api/v1/categories/${category.id}/image`)
+      .set(admin.auth)
+      .expect(200);
+
+    expect(removeRes.body.data.imageUrl).toBeNull();
+    expect(removeRes.body.data.imageMediaId).toBeNull();
+
+    // Verify Product Gallery still references Media M
+    const galleryItems = await prisma.productGalleryImage.findMany({
+      where: { productId: product.id, deletedAt: null },
+    });
+    expect(galleryItems).toHaveLength(1);
+    expect(galleryItems[0]?.mediaId).toBe(mediaId);
+
+    // Verify Media M is still active
+    const mediaCheck = await prisma.media.findUnique({ where: { id: mediaId } });
+    expect(mediaCheck?.deletedAt).toBeNull();
+
+    // Verify storage was NOT deleted
+    expect(storageDeleteSpy).not.toHaveBeenCalledWith(mediaRow.storageKey);
+    expect(storageDeleteSpy).not.toHaveBeenCalledWith(mediaRow.publicUrl);
+
+    storageDeleteSpy.mockRestore();
+  });
+
+  it('preserves shared media and storage when category banner is replaced', async () => {
+    const product = await createTestProduct();
+    const category = await createTestCategory();
+
+    const prodRes = await api()
+      .post(`/api/v1/products/${product.id}/gallery`)
+      .set(admin.auth)
+      .attach('images', validPngBuffer, 'shared-banner.png')
+      .expect(200);
+
+    const mediaId = prodRes.body.data.gallery[0].mediaId;
+    const mediaRow = await prisma.media.findUniqueOrThrow({ where: { id: mediaId } });
+
+    await prisma.category.update({
+      where: { id: category.id },
+      data: {
+        bannerUrl: mediaRow.publicUrl,
+        bannerMediaId: mediaRow.id,
+      },
+    });
+
+    const storageDeleteSpy = vi.spyOn(storageService, 'delete');
+
+    const replaceRes = await api()
+      .put(`/api/v1/categories/${category.id}/banner`)
+      .set(admin.auth)
+      .attach('banner', validJpgBuffer, 'new-banner.jpg')
+      .expect(200);
+
+    expect(replaceRes.body.data.bannerMediaId).not.toBe(mediaId);
+    expect(replaceRes.body.data.bannerUrl).not.toBe(mediaRow.publicUrl);
+
+    // Product still references M
+    const galleryItems = await prisma.productGalleryImage.findMany({
+      where: { productId: product.id, deletedAt: null },
+    });
+    expect(galleryItems[0]?.mediaId).toBe(mediaId);
+
+    // Media M still active
+    const mediaCheck = await prisma.media.findUnique({ where: { id: mediaId } });
+    expect(mediaCheck?.deletedAt).toBeNull();
+
+    // Storage for M was NOT deleted
+    expect(storageDeleteSpy).not.toHaveBeenCalledWith(mediaRow.storageKey);
+    expect(storageDeleteSpy).not.toHaveBeenCalledWith(mediaRow.publicUrl);
+
+    storageDeleteSpy.mockRestore();
+  });
+
+  it('preserves shared media and storage when category banner is removed', async () => {
+    const product = await createTestProduct();
+    const category = await createTestCategory();
+
+    const prodRes = await api()
+      .post(`/api/v1/products/${product.id}/gallery`)
+      .set(admin.auth)
+      .attach('images', validPngBuffer, 'shared-banner.png')
+      .expect(200);
+
+    const mediaId = prodRes.body.data.gallery[0].mediaId;
+    const mediaRow = await prisma.media.findUniqueOrThrow({ where: { id: mediaId } });
+
+    await prisma.category.update({
+      where: { id: category.id },
+      data: {
+        bannerUrl: mediaRow.publicUrl,
+        bannerMediaId: mediaRow.id,
+      },
+    });
+
+    const storageDeleteSpy = vi.spyOn(storageService, 'delete');
+
+    const removeRes = await api()
+      .delete(`/api/v1/categories/${category.id}/banner`)
+      .set(admin.auth)
+      .expect(200);
+
+    expect(removeRes.body.data.bannerUrl).toBeNull();
+    expect(removeRes.body.data.bannerMediaId).toBeNull();
+
+    // Product still references M
+    const galleryItems = await prisma.productGalleryImage.findMany({
+      where: { productId: product.id, deletedAt: null },
+    });
+    expect(galleryItems[0]?.mediaId).toBe(mediaId);
+
+    // Media M still active
+    const mediaCheck = await prisma.media.findUnique({ where: { id: mediaId } });
+    expect(mediaCheck?.deletedAt).toBeNull();
+
+    // Storage for M was NOT deleted
+    expect(storageDeleteSpy).not.toHaveBeenCalledWith(mediaRow.storageKey);
+    expect(storageDeleteSpy).not.toHaveBeenCalledWith(mediaRow.publicUrl);
+
+    storageDeleteSpy.mockRestore();
+  });
+
+  it('deletes unreferenced media and deletes storage exactly once when category image is removed', async () => {
+    const category = await createTestCategory();
+
+    // Upload category image
+    const uploadRes = await api()
+      .put(`/api/v1/categories/${category.id}/image`)
+      .set(admin.auth)
+      .attach('image', validPngBuffer, 'unref-cat-img.png')
+      .expect(200);
+
+    const mediaId = uploadRes.body.data.imageMediaId;
+    const mediaRow = await prisma.media.findUniqueOrThrow({ where: { id: mediaId } });
+
+    const storageDeleteSpy = vi.spyOn(storageService, 'delete');
+
+    // Remove category image
+    await api().delete(`/api/v1/categories/${category.id}/image`).set(admin.auth).expect(200);
+
+    // Verify category references cleared
+    const catInDb = await prisma.category.findUniqueOrThrow({ where: { id: category.id } });
+    expect(catInDb.imageUrl).toBeNull();
+    expect(catInDb.imageMediaId).toBeNull();
+
+    // Verify Media record is soft deleted
+    const mediaInDb = await prisma.media.findUniqueOrThrow({ where: { id: mediaId } });
+    expect(mediaInDb.deletedAt).not.toBeNull();
+
+    // Verify storage deletion happened EXACTLY ONCE
+    expect(storageDeleteSpy).toHaveBeenCalledTimes(1);
+    expect(storageDeleteSpy).toHaveBeenCalledWith(mediaRow.storageKey);
+
+    storageDeleteSpy.mockRestore();
+  });
+
+  it('deletes unreferenced media and deletes storage exactly once when category banner is removed', async () => {
+    const category = await createTestCategory();
+
+    const uploadRes = await api()
+      .put(`/api/v1/categories/${category.id}/banner`)
+      .set(admin.auth)
+      .attach('banner', validPngBuffer, 'unref-cat-banner.png')
+      .expect(200);
+
+    const mediaId = uploadRes.body.data.bannerMediaId;
+    const mediaRow = await prisma.media.findUniqueOrThrow({ where: { id: mediaId } });
+
+    const storageDeleteSpy = vi.spyOn(storageService, 'delete');
+
+    await api().delete(`/api/v1/categories/${category.id}/banner`).set(admin.auth).expect(200);
+
+    const catInDb = await prisma.category.findUniqueOrThrow({ where: { id: category.id } });
+    expect(catInDb.bannerUrl).toBeNull();
+    expect(catInDb.bannerMediaId).toBeNull();
+
+    const mediaInDb = await prisma.media.findUniqueOrThrow({ where: { id: mediaId } });
+    expect(mediaInDb.deletedAt).not.toBeNull();
+
+    expect(storageDeleteSpy).toHaveBeenCalledTimes(1);
+    expect(storageDeleteSpy).toHaveBeenCalledWith(mediaRow.storageKey);
+
+    storageDeleteSpy.mockRestore();
+  });
+
+  it('directly cleans up storage for legacy URL-only category image on replacement and removal', async () => {
+    const category = await createTestCategory();
+    const legacyUrl = 'https://cdn.example.com/legacy/old-category.png';
+
+    // Set legacy URL with null mediaId
+    await prisma.category.update({
+      where: { id: category.id },
+      data: { imageUrl: legacyUrl, imageMediaId: null },
+    });
+
+    const storageDeleteSpy = vi.spyOn(storageService, 'delete');
+
+    // Replace legacy image
+    await api()
+      .put(`/api/v1/categories/${category.id}/image`)
+      .set(admin.auth)
+      .attach('image', validJpgBuffer, 'replacement.jpg')
+      .expect(200);
+
+    expect(storageDeleteSpy).toHaveBeenCalledWith(legacyUrl);
+    storageDeleteSpy.mockClear();
+
+    // Set legacy URL again and test removal
+    await prisma.category.update({
+      where: { id: category.id },
+      data: { imageUrl: legacyUrl, imageMediaId: null },
+    });
+
+    await api().delete(`/api/v1/categories/${category.id}/image`).set(admin.auth).expect(200);
+
+    expect(storageDeleteSpy).toHaveBeenCalledWith(legacyUrl);
+    storageDeleteSpy.mockRestore();
+  });
+
+  it('directly cleans up storage for legacy URL-only category banner on replacement and removal', async () => {
+    const category = await createTestCategory();
+    const legacyUrl = 'https://cdn.example.com/legacy/old-banner.png';
+
+    await prisma.category.update({
+      where: { id: category.id },
+      data: { bannerUrl: legacyUrl, bannerMediaId: null },
+    });
+
+    const storageDeleteSpy = vi.spyOn(storageService, 'delete');
+
+    await api()
+      .put(`/api/v1/categories/${category.id}/banner`)
+      .set(admin.auth)
+      .attach('banner', validJpgBuffer, 'replacement-banner.jpg')
+      .expect(200);
+
+    expect(storageDeleteSpy).toHaveBeenCalledWith(legacyUrl);
+    storageDeleteSpy.mockClear();
+
+    await prisma.category.update({
+      where: { id: category.id },
+      data: { bannerUrl: legacyUrl, bannerMediaId: null },
+    });
+
+    await api().delete(`/api/v1/categories/${category.id}/banner`).set(admin.auth).expect(200);
+
+    expect(storageDeleteSpy).toHaveBeenCalledWith(legacyUrl);
+    storageDeleteSpy.mockRestore();
+  });
+});

@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { translatePrismaUniqueError } from '../../shared/database';
 import { AppError } from '../../shared/errors';
 import { buildPaginationMeta, type Paginated } from '../../shared/http';
+import { logger } from '../../shared/logger';
 import { storageService, UPLOAD_LIMITS, validateFileSize, validateImageContent } from '../../shared/storage';
 import { mediaService } from '../media';
 import { productReferenceService } from '../products';
@@ -119,6 +120,34 @@ async function assertValidParent(
       }
       const ancestor = await categoriesRepository.findByIdIncludingDeleted(currentParentId);
       currentParentId = ancestor?.parentId ?? null;
+    }
+  }
+}
+
+async function cleanupOldCategoryMedia(
+  categoryId: string,
+  entityType: 'image' | 'banner',
+  mediaId: string | null | undefined,
+  url: string | null | undefined,
+  actorId: string
+): Promise<void> {
+  if (mediaId) {
+    try {
+      await mediaService.deleteIfUnreferenced(mediaId, actorId);
+    } catch (err) {
+      logger.warn(
+        { err, categoryId, entityType, mediaId },
+        `Failed to clean up unreferenced category ${entityType} media`
+      );
+    }
+  } else if (url) {
+    try {
+      await storageService.delete(url);
+    } catch (err) {
+      logger.warn(
+        { err, categoryId, entityType, url },
+        `Failed to clean up legacy category ${entityType} storage`
+      );
     }
   }
 }
@@ -288,12 +317,7 @@ export const categoriesService = {
       throw err;
     }
 
-    if (oldImageMediaId) {
-      await mediaService.deleteIfUnreferenced(oldImageMediaId, actorId).catch(() => {});
-    }
-    if (oldImageUrl) {
-      await storageService.delete(oldImageUrl).catch(() => {});
-    }
+    await cleanupOldCategoryMedia(id, 'image', oldImageMediaId, oldImageUrl, actorId);
 
     return toCategoryDto(updated);
   },
@@ -310,12 +334,7 @@ export const categoriesService = {
 
     const updated = await categoriesRepository.updateImage(id, null, null, actorId);
 
-    if (oldImageMediaId) {
-      await mediaService.deleteIfUnreferenced(oldImageMediaId, actorId).catch(() => {});
-    }
-    if (oldImageUrl) {
-      await storageService.delete(oldImageUrl).catch(() => {});
-    }
+    await cleanupOldCategoryMedia(id, 'image', oldImageMediaId, oldImageUrl, actorId);
 
     return toCategoryDto(updated);
   },
@@ -363,12 +382,7 @@ export const categoriesService = {
       throw err;
     }
 
-    if (oldBannerMediaId) {
-      await mediaService.deleteIfUnreferenced(oldBannerMediaId, actorId).catch(() => {});
-    }
-    if (oldBannerUrl) {
-      await storageService.delete(oldBannerUrl).catch(() => {});
-    }
+    await cleanupOldCategoryMedia(id, 'banner', oldBannerMediaId, oldBannerUrl, actorId);
 
     return toCategoryDto(updated);
   },
@@ -385,12 +399,7 @@ export const categoriesService = {
 
     const updated = await categoriesRepository.updateBanner(id, null, null, actorId);
 
-    if (oldBannerMediaId) {
-      await mediaService.deleteIfUnreferenced(oldBannerMediaId, actorId).catch(() => {});
-    }
-    if (oldBannerUrl) {
-      await storageService.delete(oldBannerUrl).catch(() => {});
-    }
+    await cleanupOldCategoryMedia(id, 'banner', oldBannerMediaId, oldBannerUrl, actorId);
 
     return toCategoryDto(updated);
   },
