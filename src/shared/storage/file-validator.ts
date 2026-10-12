@@ -88,10 +88,36 @@ export interface ValidatedVideo {
   extension: '.mp4' | '.webm';
 }
 
+export const ALLOWED_MP4_BRANDS = new Set([
+  'isom',
+  'iso2',
+  'iso5',
+  'iso6',
+  'mp41',
+  'mp42',
+  'avc1',
+  'M4V ',
+  'mp4v',
+  'dash',
+]);
+
+export const REJECTED_FTYP_BRANDS = new Set([
+  'qt  ', // QuickTime MOV
+  'heic', // HEIF / HEIC image
+  'heix',
+  'mif1',
+  'msf1',
+  '3gp4', // 3GP mobile
+  '3gp5',
+  '3gp6',
+  '3g2a',
+  '3g2b',
+]);
+
 /**
  * Validates video content by container signatures.
- * Strictly allows MP4 (ISO Base Media / ftyp) and WebM (EBML header with 'webm' DocType).
- * Rejects executables, scripts, generic MKV, AVI, MOV, SVG, and malformed files.
+ * Strictly allows web-compatible MP4 (ISO Base Media / ftyp with valid brands) and WebM (EBML header with 'webm' DocType).
+ * Rejects executables, scripts, generic MKV, AVI, MOV, HEIC/HEIF, 3GP, SVG, and malformed files.
  */
 export function validateVideoContent(buffer: Buffer): ValidatedVideo {
   if (!buffer || buffer.length === 0) {
@@ -99,9 +125,43 @@ export function validateVideoContent(buffer: Buffer): ValidatedVideo {
   }
 
   // MP4: ISO Base Media File Format box structure.
-  // Bytes 4..7 must be 'ftyp'
-  if (buffer.length >= 8 && buffer.subarray(4, 8).toString('ascii') === 'ftyp') {
-    return { mimeType: 'video/mp4', extension: '.mp4' };
+  // Bytes 4..7 must be 'ftyp'.
+  // We inspect major brand (bytes 8..11) and compatible brands (from byte 16 up to box length).
+  if (buffer.length >= 12 && buffer.subarray(4, 8).toString('ascii') === 'ftyp') {
+    const majorBrand = buffer.subarray(8, 12).toString('ascii');
+
+    // Reject explicitly disallowed containers like QuickTime MOV, HEIF/HEIC, 3GP
+    if (REJECTED_FTYP_BRANDS.has(majorBrand)) {
+      throw AppError.badRequest(
+        'Invalid video container. QuickTime MOV, HEIF/HEIC, and 3GP containers are not allowed.',
+        'INVALID_VIDEO_FILE'
+      );
+    }
+
+    let isAllowedBrand = ALLOWED_MP4_BRANDS.has(majorBrand);
+
+    if (!isAllowedBrand && buffer.length >= 16) {
+      // Box size from first 4 bytes (big endian)
+      const boxSize = buffer.readUInt32BE(0);
+      const searchEnd = Math.min(buffer.length, boxSize > 16 ? boxSize : 256);
+      for (let offset = 16; offset + 4 <= searchEnd; offset += 4) {
+        const brand = buffer.subarray(offset, offset + 4).toString('ascii');
+        if (REJECTED_FTYP_BRANDS.has(brand)) {
+          throw AppError.badRequest(
+            'Invalid video container. MOV, HEIF/HEIC, and 3GP containers are not allowed.',
+            'INVALID_VIDEO_FILE'
+          );
+        }
+        if (ALLOWED_MP4_BRANDS.has(brand)) {
+          isAllowedBrand = true;
+          break;
+        }
+      }
+    }
+
+    if (isAllowedBrand) {
+      return { mimeType: 'video/mp4', extension: '.mp4' };
+    }
   }
 
   // WebM: EBML header starts with 1A 45 DF A3
@@ -133,6 +193,21 @@ export const UPLOAD_LIMITS = {
   PRODUCT_GALLERY_IMAGE_MAX_BYTES: 5 * 1024 * 1024, // 5 MB
   PRODUCT_VIDEO_MAX_BYTES: 100 * 1024 * 1024, // 100 MB
   PRODUCT_DOCUMENT_MAX_BYTES: 10 * 1024 * 1024, // 10 MB
+  PRODUCT_GALLERY_MAX_FILES: 5,
+  PRODUCT_VIDEO_MAX_FILES: 2,
+  PRODUCT_DOCUMENT_MAX_FILES: 3,
+  PRODUCT_GALLERY: {
+    MAX_FILES: 5,
+    MAX_BYTES: 5 * 1024 * 1024,
+  },
+  PRODUCT_VIDEOS: {
+    MAX_FILES: 2,
+    MAX_BYTES: 100 * 1024 * 1024,
+  },
+  PRODUCT_DOCUMENTS: {
+    MAX_FILES: 3,
+    MAX_BYTES: 10 * 1024 * 1024,
+  },
 } as const;
 
 export function validateFileSize(

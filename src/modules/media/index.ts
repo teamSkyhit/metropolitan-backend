@@ -15,8 +15,9 @@ export {
   toMediaDto,
   registerMediaReferenceCheckers,
   type MediaReferenceChecker,
+  type CreateMediaData,
 } from './media.service';
-export { mediaRepository, type MediaRecord } from './media.repository';
+export type { MediaRecord } from './media.repository';
 export {
   MediaErrorCode,
   mediaSchema,

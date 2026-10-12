@@ -112,6 +112,53 @@ productsRouter.put(
   productsController.updateSpecifications
 );
 
+// Feature routes
+productsRouter.post('/:id/features', authorize(Permission.PRODUCTS_UPDATE), productsController.addFeature);
+productsRouter.patch(
+  '/:id/features/reorder',
+  authorize(Permission.PRODUCTS_UPDATE),
+  productsController.reorderFeatures
+);
+productsRouter.patch(
+  '/:id/features/:featureId',
+  authorize(Permission.PRODUCTS_UPDATE),
+  productsController.updateFeature
+);
+productsRouter.delete(
+  '/:id/features/:featureId',
+  authorize(Permission.PRODUCTS_UPDATE),
+  productsController.removeFeature
+);
+
+// Key benefit routes
+productsRouter.post(
+  '/:id/key-benefits',
+  authorize(Permission.PRODUCTS_UPDATE),
+  productsController.addKeyBenefit
+);
+productsRouter.patch(
+  '/:id/key-benefits/reorder',
+  authorize(Permission.PRODUCTS_UPDATE),
+  productsController.reorderKeyBenefits
+);
+productsRouter.patch(
+  '/:id/key-benefits/:benefitId',
+  authorize(Permission.PRODUCTS_UPDATE),
+  productsController.updateKeyBenefit
+);
+productsRouter.delete(
+  '/:id/key-benefits/:benefitId',
+  authorize(Permission.PRODUCTS_UPDATE),
+  productsController.removeKeyBenefit
+);
+
+// Related products route
+productsRouter.put(
+  '/:id/related-products',
+  authorize(Permission.PRODUCTS_UPDATE),
+  productsController.setRelatedProducts
+);
+
 // ── Public Website Endpoints (/api/v1/public/products) ───────────────────────
 
 export const productsPublicRouter = Router();

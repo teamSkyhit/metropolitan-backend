@@ -1,7 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { categoriesService } from '../../src/modules/categories/categories.service';
 import { categoriesRepository } from '../../src/modules/categories/categories.repository';
-import { mediaRepository } from '../../src/modules/media/media.repository';
+import { mediaService } from '../../src/modules/media';
 import { storageService } from '../../src/shared/storage';
 import { CategoriesErrorCode } from '../../src/modules/categories/categories.schema';
 
@@ -50,7 +50,7 @@ describe('Category Media Service (unit)', () => {
         size: 10,
         mimeType: 'image/jpeg',
       });
-      vi.spyOn(mediaRepository, 'create').mockResolvedValue({
+      vi.spyOn(mediaService, 'createManagedMedia').mockResolvedValue({
         id: 'media-img-1',
         fileName: 'test.jpg',
         storageKey: 'categories/images/stored.jpg',
@@ -79,7 +79,8 @@ describe('Category Media Service (unit)', () => {
         dummyCategory.id,
         'https://cdn.example.com/categories/images/stored.jpg',
         'media-img-1',
-        'actor-1'
+        'actor-1',
+        expect.anything()
       );
     });
 
@@ -99,7 +100,7 @@ describe('Category Media Service (unit)', () => {
         size: 10,
         mimeType: 'image/jpeg',
       });
-      vi.spyOn(mediaRepository, 'create').mockResolvedValue({
+      vi.spyOn(mediaService, 'createManagedMedia').mockResolvedValue({
         id: 'media-new-1',
         fileName: 'new.jpg',
         storageKey: 'categories/images/new.jpg',
@@ -191,7 +192,7 @@ describe('Category Media Service (unit)', () => {
         size: 10,
         mimeType: 'image/jpeg',
       });
-      vi.spyOn(mediaRepository, 'create').mockResolvedValue({
+      vi.spyOn(mediaService, 'createManagedMedia').mockResolvedValue({
         id: 'media-ban-1',
         fileName: 'hero.jpg',
         storageKey: 'categories/banners/hero.jpg',

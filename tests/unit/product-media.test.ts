@@ -5,7 +5,7 @@ import {
   toPublicProductDto,
 } from '../../src/modules/products/products.service';
 import { productsRepository, type ProductRecord } from '../../src/modules/products/products.repository';
-import { mediaRepository } from '../../src/modules/media';
+import { mediaService } from '../../src/modules/media';
 import { storageService } from '../../src/shared/storage';
 import { ProductsErrorCode } from '../../src/modules/products/products.schema';
 
@@ -121,7 +121,7 @@ describe('Product Media Service (unit)', () => {
         size: 10,
         mimeType: 'image/jpeg',
       });
-      vi.spyOn(mediaRepository, 'create').mockResolvedValue({
+      vi.spyOn(mediaService, 'createManagedMedia').mockResolvedValue({
         id: 'media-1',
         fileName: 'image.jpg',
         storageKey: 'products/gallery/img1.jpg',
@@ -185,7 +185,8 @@ describe('Product Media Service (unit)', () => {
           sortOrder: 0,
           isPrimary: true,
         }),
-        'actor-1'
+        'actor-1',
+        expect.anything()
       );
       expect(result.gallery).toHaveLength(1);
       expect(result.gallery[0]?.isPrimary).toBe(true);
@@ -406,12 +407,27 @@ describe('Product Media Service (unit)', () => {
         updatedById: 'actor-1',
         media: { id: 'm2', publicUrl: 'https://cdn.example.com/2.jpg' },
       });
+      vi.spyOn(productsRepository, 'findActiveGalleryImages').mockResolvedValue([
+        {
+          id: 'g2',
+          productId: dummyProduct.id,
+          mediaId: 'm2',
+          sortOrder: 1,
+          isPrimary: false,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          deletedAt: null,
+          createdById: 'actor-1',
+          updatedById: 'actor-1',
+          media: { id: 'm2', publicUrl: 'https://cdn.example.com/2.jpg' },
+        },
+      ]);
       vi.spyOn(productsService, 'getById').mockResolvedValue(toProductDto(dummyProduct));
 
       await productsService.removeGalleryImage(dummyProduct.id, 'g1', 'actor-1');
 
-      expect(removeSpy).toHaveBeenCalledWith(dummyProduct.id, 'g1', 'actor-1');
-      expect(setPrimarySpy).toHaveBeenCalledWith(dummyProduct.id, 'g2', 'actor-1');
+      expect(removeSpy).toHaveBeenCalledWith(dummyProduct.id, 'g1', 'actor-1', expect.anything());
+      expect(setPrimarySpy).toHaveBeenCalledWith(dummyProduct.id, 'g2', 'actor-1', expect.anything());
     });
   });
 
@@ -426,7 +442,7 @@ describe('Product Media Service (unit)', () => {
         size: 30,
         mimeType: 'application/pdf',
       });
-      vi.spyOn(mediaRepository, 'create').mockResolvedValue({
+      vi.spyOn(mediaService, 'createManagedMedia').mockResolvedValue({
         id: 'media-doc-1',
         fileName: 'specsheet.pdf',
         storageKey: 'products/docs/spec.pdf',
@@ -500,7 +516,8 @@ describe('Product Media Service (unit)', () => {
           originalFileName: 'specsheet.pdf',
           sortOrder: 0,
         }),
-        'actor-1'
+        'actor-1',
+        expect.anything()
       );
       expect(result.documents).toHaveLength(1);
       expect(result.documents[0]?.title).toBe('specsheet');
@@ -622,7 +639,7 @@ describe('Product Media Service (unit)', () => {
 
       await productsService.removeDocument(dummyProduct.id, 'd1', 'actor-1');
 
-      expect(removeDocSpy).toHaveBeenCalledWith(dummyProduct.id, 'd1', 'actor-1');
+      expect(removeDocSpy).toHaveBeenCalledWith(dummyProduct.id, 'd1', 'actor-1', expect.anything());
     });
   });
 
@@ -637,7 +654,7 @@ describe('Product Media Service (unit)', () => {
         size: 32,
         mimeType: 'video/mp4',
       });
-      vi.spyOn(mediaRepository, 'create').mockResolvedValue({
+      vi.spyOn(mediaService, 'createManagedMedia').mockResolvedValue({
         id: 'media-vid-1',
         fileName: 'demo.mp4',
         storageKey: 'products/videos/video1.mp4',
@@ -680,7 +697,8 @@ describe('Product Media Service (unit)', () => {
           title: 'Overview',
           sortOrder: 0,
         },
-        'actor-1'
+        'actor-1',
+        expect.anything()
       );
     });
 
@@ -694,7 +712,7 @@ describe('Product Media Service (unit)', () => {
         size: 32,
         mimeType: 'video/mp4',
       });
-      vi.spyOn(mediaRepository, 'create').mockResolvedValue({
+      vi.spyOn(mediaService, 'createManagedMedia').mockResolvedValue({
         id: 'm1',
         fileName: 'vid.mp4',
         storageKey: 'products/videos/vid.mp4',
@@ -813,7 +831,7 @@ describe('Product Media Service (unit)', () => {
       vi.spyOn(productsService, 'getById').mockResolvedValue(toProductDto(dummyProduct));
 
       await productsService.removeVideo(dummyProduct.id, 'vid-1', 'actor-1');
-      expect(removeSpy).toHaveBeenCalledWith(dummyProduct.id, 'vid-1', 'actor-1');
+      expect(removeSpy).toHaveBeenCalledWith(dummyProduct.id, 'vid-1', 'actor-1', expect.anything());
     });
   });
 

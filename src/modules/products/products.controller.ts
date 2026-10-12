@@ -9,17 +9,26 @@ import {
 import { requireAuth } from '../../shared/security/auth-context';
 import {
   createProductBodySchema,
+  createProductFeatureBodySchema,
+  createProductKeyBenefitBodySchema,
   listProductsQuerySchema,
   listPublicProductsQuerySchema,
   productDocumentParamsSchema,
+  productFeatureParamsSchema,
   productGalleryParamsSchema,
+  productKeyBenefitParamsSchema,
   productVideoParamsSchema,
   publicProductSlugParamsSchema,
   reorderProductDocumentsBodySchema,
+  reorderProductFeaturesBodySchema,
   reorderProductGalleryBodySchema,
+  reorderProductKeyBenefitsBodySchema,
   reorderProductVideosBodySchema,
+  setRelatedProductsBodySchema,
   updateProductBodySchema,
   updateProductDocumentBodySchema,
+  updateProductFeatureBodySchema,
+  updateProductKeyBenefitBodySchema,
   updateProductVideoBodySchema,
   uploadProductDocumentBodySchema,
   uploadProductVideoBodySchema,
@@ -211,6 +220,98 @@ export const productsController = {
         await productsService.updateSpecifications(
           req.params.id,
           req.body.specifications,
+          requireAuth(req).userId
+        )
+      );
+    }
+  ),
+
+  addFeature: handle({ params: idParamsSchema, body: createProductFeatureBodySchema }, async (req, res) => {
+    sendSuccess(res, await productsService.createFeature(req.params.id, req.body, requireAuth(req).userId));
+  }),
+
+  updateFeature: handle(
+    { params: productFeatureParamsSchema, body: updateProductFeatureBodySchema },
+    async (req, res) => {
+      sendSuccess(
+        res,
+        await productsService.updateFeature(
+          req.params.id,
+          req.params.featureId,
+          req.body,
+          requireAuth(req).userId
+        )
+      );
+    }
+  ),
+
+  removeFeature: handle({ params: productFeatureParamsSchema }, async (req, res) => {
+    sendSuccess(
+      res,
+      await productsService.removeFeature(req.params.id, req.params.featureId, requireAuth(req).userId)
+    );
+  }),
+
+  reorderFeatures: handle(
+    { params: idParamsSchema, body: reorderProductFeaturesBodySchema },
+    async (req, res) => {
+      sendSuccess(
+        res,
+        await productsService.reorderFeatures(req.params.id, req.body.featureIds, requireAuth(req).userId)
+      );
+    }
+  ),
+
+  addKeyBenefit: handle(
+    { params: idParamsSchema, body: createProductKeyBenefitBodySchema },
+    async (req, res) => {
+      sendSuccess(
+        res,
+        await productsService.createKeyBenefit(req.params.id, req.body, requireAuth(req).userId)
+      );
+    }
+  ),
+
+  updateKeyBenefit: handle(
+    { params: productKeyBenefitParamsSchema, body: updateProductKeyBenefitBodySchema },
+    async (req, res) => {
+      sendSuccess(
+        res,
+        await productsService.updateKeyBenefit(
+          req.params.id,
+          req.params.benefitId,
+          req.body,
+          requireAuth(req).userId
+        )
+      );
+    }
+  ),
+
+  removeKeyBenefit: handle({ params: productKeyBenefitParamsSchema }, async (req, res) => {
+    sendSuccess(
+      res,
+      await productsService.removeKeyBenefit(req.params.id, req.params.benefitId, requireAuth(req).userId)
+    );
+  }),
+
+  reorderKeyBenefits: handle(
+    { params: idParamsSchema, body: reorderProductKeyBenefitsBodySchema },
+    async (req, res) => {
+      sendSuccess(
+        res,
+        await productsService.reorderKeyBenefits(req.params.id, req.body.benefitIds, requireAuth(req).userId)
+      );
+    }
+  ),
+
+  setRelatedProducts: handle(
+    { params: idParamsSchema, body: setRelatedProductsBodySchema },
+    async (req, res) => {
+      sendSuccess(
+        res,
+        await productsService.setRelatedProducts(
+          req.params.id,
+          req.body.relatedProductIds,
           requireAuth(req).userId
         )
       );

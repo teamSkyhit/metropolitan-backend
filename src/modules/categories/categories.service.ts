@@ -3,7 +3,7 @@ import { translatePrismaUniqueError } from '../../shared/database';
 import { AppError } from '../../shared/errors';
 import { buildPaginationMeta, type Paginated } from '../../shared/http';
 import { storageService, UPLOAD_LIMITS, validateFileSize, validateImageContent } from '../../shared/storage';
-import { mediaRepository } from '../media';
+import { mediaService } from '../media';
 import { productReferenceService } from '../products';
 import { categoriesRepository, type CategoryRecord } from './categories.repository';
 import {
@@ -253,6 +253,7 @@ export const categoriesService = {
     const validated = validateImageContent(file.buffer);
 
     const oldImageUrl = category.imageUrl;
+    const oldImageMediaId = category.imageMediaId;
 
     const stored = await storageService.upload(
       {
@@ -264,25 +265,33 @@ export const categoriesService = {
       'categories/images'
     );
 
-    let mediaRecordId: string | null = null;
+    let updated: CategoryRecord;
     try {
-      const mediaRecord = await mediaRepository.create({
-        fileName: file.originalname || stored.filename,
-        storageKey: stored.path,
-        publicUrl: stored.url,
-        mimeType: validated.mimeType,
-        fileSize: file.size,
-        uploadedById: actorId,
-        actorId,
+      updated = await categoriesRepository.withTransaction(async (tx) => {
+        const mediaRecord = await mediaService.createManagedMedia(
+          {
+            fileName: file.originalname || stored.filename,
+            storageKey: stored.path,
+            publicUrl: stored.url,
+            mimeType: validated.mimeType,
+            fileSize: file.size,
+            uploadedById: actorId,
+            actorId,
+          },
+          tx
+        );
+
+        return categoriesRepository.updateImage(id, stored.url, mediaRecord.id, actorId, tx);
       });
-      mediaRecordId = mediaRecord.id;
-    } catch {
-      // Graceful fallback if media table insert fails
+    } catch (err) {
+      await storageService.delete(stored.path).catch(() => {});
+      throw err;
     }
 
-    const updated = await categoriesRepository.updateImage(id, stored.url, mediaRecordId, actorId);
-
-    if (oldImageUrl && !oldImageUrl.includes('/media/')) {
+    if (oldImageMediaId) {
+      await mediaService.deleteIfUnreferenced(oldImageMediaId, actorId).catch(() => {});
+    }
+    if (oldImageUrl) {
       await storageService.delete(oldImageUrl).catch(() => {});
     }
 
@@ -297,9 +306,14 @@ export const categoriesService = {
     }
 
     const oldImageUrl = category.imageUrl;
+    const oldImageMediaId = category.imageMediaId;
+
     const updated = await categoriesRepository.updateImage(id, null, null, actorId);
 
-    if (oldImageUrl && !oldImageUrl.includes('/media/')) {
+    if (oldImageMediaId) {
+      await mediaService.deleteIfUnreferenced(oldImageMediaId, actorId).catch(() => {});
+    }
+    if (oldImageUrl) {
       await storageService.delete(oldImageUrl).catch(() => {});
     }
 
@@ -314,6 +328,7 @@ export const categoriesService = {
     const validated = validateImageContent(file.buffer);
 
     const oldBannerUrl = category.bannerUrl;
+    const oldBannerMediaId = category.bannerMediaId;
 
     const stored = await storageService.upload(
       {
@@ -325,25 +340,33 @@ export const categoriesService = {
       'categories/banners'
     );
 
-    let mediaRecordId: string | null = null;
+    let updated: CategoryRecord;
     try {
-      const mediaRecord = await mediaRepository.create({
-        fileName: file.originalname || stored.filename,
-        storageKey: stored.path,
-        publicUrl: stored.url,
-        mimeType: validated.mimeType,
-        fileSize: file.size,
-        uploadedById: actorId,
-        actorId,
+      updated = await categoriesRepository.withTransaction(async (tx) => {
+        const mediaRecord = await mediaService.createManagedMedia(
+          {
+            fileName: file.originalname || stored.filename,
+            storageKey: stored.path,
+            publicUrl: stored.url,
+            mimeType: validated.mimeType,
+            fileSize: file.size,
+            uploadedById: actorId,
+            actorId,
+          },
+          tx
+        );
+
+        return categoriesRepository.updateBanner(id, stored.url, mediaRecord.id, actorId, tx);
       });
-      mediaRecordId = mediaRecord.id;
-    } catch {
-      // Graceful fallback if media table insert fails
+    } catch (err) {
+      await storageService.delete(stored.path).catch(() => {});
+      throw err;
     }
 
-    const updated = await categoriesRepository.updateBanner(id, stored.url, mediaRecordId, actorId);
-
-    if (oldBannerUrl && !oldBannerUrl.includes('/media/')) {
+    if (oldBannerMediaId) {
+      await mediaService.deleteIfUnreferenced(oldBannerMediaId, actorId).catch(() => {});
+    }
+    if (oldBannerUrl) {
       await storageService.delete(oldBannerUrl).catch(() => {});
     }
 
@@ -358,9 +381,14 @@ export const categoriesService = {
     }
 
     const oldBannerUrl = category.bannerUrl;
+    const oldBannerMediaId = category.bannerMediaId;
+
     const updated = await categoriesRepository.updateBanner(id, null, null, actorId);
 
-    if (oldBannerUrl && !oldBannerUrl.includes('/media/')) {
+    if (oldBannerMediaId) {
+      await mediaService.deleteIfUnreferenced(oldBannerMediaId, actorId).catch(() => {});
+    }
+    if (oldBannerUrl) {
       await storageService.delete(oldBannerUrl).catch(() => {});
     }
 

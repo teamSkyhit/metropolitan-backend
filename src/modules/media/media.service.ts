@@ -1,9 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import { AppError } from '../../shared/errors';
 import { buildPaginationMeta, type Paginated } from '../../shared/http';
+import type { Prisma } from '@prisma/client';
 import { storageService, UPLOAD_LIMITS, validateFileSize, validateImageContent } from '../../shared/storage';
-import { mediaRepository, type MediaRecord } from './media.repository';
+import { mediaRepository, type MediaRecord, type CreateMediaData } from './media.repository';
 import { MediaErrorCode, type ListMediaQuery, type MediaDto } from './media.schema';
+
+export type { CreateMediaData };
 
 export function toMediaDto(record: MediaRecord): MediaDto {
   return {
@@ -90,6 +93,40 @@ export const mediaService = {
     });
 
     return toMediaDto(record);
+  },
+
+  async createManagedMedia(data: CreateMediaData, tx?: Prisma.TransactionClient): Promise<MediaRecord> {
+    return mediaRepository.create(data, tx);
+  },
+
+  async isReferenced(url: string, id?: string): Promise<{ isReferenced: boolean; referencedIn?: string }> {
+    for (const { name, checker } of configuredReferenceCheckers) {
+      const referenced = await checker(url, id);
+      if (referenced) {
+        return { isReferenced: true, referencedIn: name };
+      }
+    }
+    return { isReferenced: false };
+  },
+
+  async deleteIfUnreferenced(
+    mediaId: string,
+    actorId: string | null = null,
+    tx?: Prisma.TransactionClient
+  ): Promise<{ deleted: boolean; storageKey?: string }> {
+    const record = await mediaRepository.findById(mediaId);
+    if (!record) return { deleted: false };
+
+    for (const { checker } of configuredReferenceCheckers) {
+      const referenced = await checker(record.publicUrl, record.id);
+      if (referenced) {
+        return { deleted: false };
+      }
+    }
+
+    await mediaRepository.softDelete(mediaId, actorId, tx);
+    await storageService.delete(record.storageKey).catch(() => {});
+    return { deleted: true, storageKey: record.storageKey };
   },
 
   async remove(id: string, actorId: string | null = null): Promise<void> {

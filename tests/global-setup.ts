@@ -16,7 +16,9 @@ export default function setup(): void {
     throw new Error('Refusing to run tests against a database whose name does not contain "_test"');
   }
   try {
-    execSync('npx prisma migrate deploy', { env, stdio: ['ignore', 'ignore', 'pipe'] });
+    const prismaCmd =
+      process.platform === 'win32' ? 'node_modules\\.bin\\prisma.cmd' : './node_modules/.bin/prisma';
+    execSync(`${prismaCmd} migrate deploy`, { env, stdio: ['ignore', 'ignore', 'pipe'] });
   } catch (err: unknown) {
     const errorMsg = (err as { stderr?: Buffer })?.stderr?.toString() ?? String(err);
     if (errorMsg.includes('P1001') || errorMsg.includes("Can't reach database server")) {

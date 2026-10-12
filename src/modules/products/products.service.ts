@@ -10,18 +10,22 @@ import {
   validatePdfContent,
   validateVideoContent,
 } from '../../shared/storage';
-import { mediaRepository } from '../media';
+import { mediaService } from '../media';
 import { productsRepository, type ProductRecord, type PublicProductRecord } from './products.repository';
 import {
   normalizeSku,
   ProductsErrorCode,
   type CreateProductBody,
+  type CreateProductFeatureBody,
+  type CreateProductKeyBenefitBody,
   type ListProductsQuery,
   type ListPublicProductsQuery,
   type ProductDto,
   type ProductSpecificationItem,
   type PublicProductDto,
   type UpdateProductBody,
+  type UpdateProductFeatureBody,
+  type UpdateProductKeyBenefitBody,
 } from './products.schema';
 
 function handleProductUniqueError(err: unknown): never {
@@ -72,6 +76,40 @@ export function toProductDto(record: ProductRecord): ProductDto {
       }))
     : [];
 
+  const features = Array.isArray(record.features)
+    ? record.features.map((f) => ({
+        id: f.id,
+        icon: f.icon,
+        title: f.title,
+        description: f.description,
+        sortOrder: f.sortOrder,
+      }))
+    : [];
+
+  const keyBenefits = Array.isArray(record.keyBenefits)
+    ? record.keyBenefits.map((b) => ({
+        id: b.id,
+        icon: b.icon,
+        title: b.title,
+        description: b.description,
+        sortOrder: b.sortOrder,
+      }))
+    : [];
+
+  const relatedProducts = Array.isArray(record.relatedProducts)
+    ? record.relatedProducts
+        .filter((rel) => rel.relatedProduct && rel.relatedProduct.deletedAt === null)
+        .map((rel) => ({
+          id: rel.relatedProduct.id,
+          name: rel.relatedProduct.name,
+          slug: rel.relatedProduct.slug,
+          sku: rel.relatedProduct.sku,
+          imageUrl: rel.relatedProduct.imageUrl,
+          price: rel.relatedProduct.price !== null ? rel.relatedProduct.price.toNumber() : null,
+          priceVisibility: rel.relatedProduct.priceVisibility,
+        }))
+    : [];
+
   const primaryGallery = gallery.find((g) => g.isPrimary) ?? gallery[0];
   const effectiveImageUrl = record.imageUrl ?? primaryGallery?.publicUrl ?? null;
 
@@ -82,7 +120,10 @@ export function toProductDto(record: ProductRecord): ProductDto {
     sku: record.sku,
     brandId: record.brandId,
     categoryId: record.categoryId,
+    shortDescription: record.shortDescription,
     description: record.description,
+    overview: record.overview,
+    series: record.series,
     price: record.price !== null ? record.price.toNumber() : null,
     priceVisibility: record.priceVisibility,
     status: record.status,
@@ -91,6 +132,14 @@ export function toProductDto(record: ProductRecord): ProductDto {
     gallery,
     videos,
     documents,
+    features,
+    keyBenefits,
+    relatedProducts,
+    metaTitle: record.metaTitle,
+    metaDescription: record.metaDescription,
+    metaKeywords: record.metaKeywords,
+    canonicalUrl: record.canonicalUrl,
+    ogImageUrl: record.ogImageUrl,
     specifications: Array.isArray(record.specifications)
       ? (record.specifications as unknown as ProductSpecificationItem[])
       : null,
@@ -181,12 +230,73 @@ export function toPublicProductDto(
         }))
       : [];
 
+  const features = options?.lightweight
+    ? []
+    : Array.isArray(record.features)
+      ? record.features.map((f) => ({
+          id: f.id,
+          icon: f.icon,
+          title: f.title,
+          description: f.description,
+          sortOrder: f.sortOrder,
+        }))
+      : [];
+
+  const keyBenefits = options?.lightweight
+    ? []
+    : Array.isArray(record.keyBenefits)
+      ? record.keyBenefits.map((b) => ({
+          id: b.id,
+          icon: b.icon,
+          title: b.title,
+          description: b.description,
+          sortOrder: b.sortOrder,
+        }))
+      : [];
+
+  const relatedProducts = options?.lightweight
+    ? []
+    : Array.isArray(record.relatedProducts)
+      ? record.relatedProducts
+          .filter(
+            (rel) =>
+              rel.relatedProduct &&
+              rel.relatedProduct.deletedAt === null &&
+              rel.relatedProduct.status === 'PUBLISHED'
+          )
+          .map((rel) => ({
+            id: rel.relatedProduct.id,
+            name: rel.relatedProduct.name,
+            slug: rel.relatedProduct.slug,
+            sku: rel.relatedProduct.sku,
+            imageUrl: rel.relatedProduct.imageUrl,
+            price:
+              rel.relatedProduct.priceVisibility && rel.relatedProduct.price !== null
+                ? rel.relatedProduct.price.toNumber()
+                : null,
+            priceVisibility: rel.relatedProduct.priceVisibility,
+          }))
+      : [];
+
+  const seo = options?.lightweight
+    ? undefined
+    : {
+        metaTitle: record.metaTitle ?? record.name,
+        metaDescription: record.metaDescription ?? record.shortDescription ?? record.description ?? null,
+        metaKeywords: record.metaKeywords ?? null,
+        canonicalUrl: record.canonicalUrl ?? null,
+        ogImageUrl: record.ogImageUrl ?? effectiveImageUrl ?? null,
+      };
+
   return {
     id: record.id,
     name: record.name,
     slug: record.slug,
     sku: record.sku,
+    shortDescription: record.shortDescription,
     description: record.description,
+    overview: record.overview,
+    series: record.series,
     price: record.priceVisibility && record.price !== null ? record.price.toNumber() : null,
     hotDeal: record.hotDeal,
     imageUrl: effectiveImageUrl,
@@ -196,6 +306,8 @@ export function toPublicProductDto(
     specifications: Array.isArray(record.specifications)
       ? (record.specifications as unknown as ProductSpecificationItem[])
       : null,
+    features,
+    keyBenefits,
     brand: {
       id: record.brand.id,
       name: record.brand.name,
@@ -212,6 +324,8 @@ export function toPublicProductDto(
       imageUrl: record.category.imageUrl ?? null,
       bannerUrl: record.category.bannerUrl,
     },
+    relatedProducts,
+    ...(seo && { seo }),
     createdAt: record.createdAt.toISOString(),
   };
 }
@@ -446,22 +560,31 @@ export const productsService = {
     if (!product) throw AppError.notFound('Product');
 
     const currentCount = await productsRepository.countActiveGalleryImages(id);
-    if (currentCount + files.length > 5) {
+    if (currentCount + files.length > UPLOAD_LIMITS.PRODUCT_GALLERY.MAX_FILES) {
       throw AppError.conflict(
-        `Product gallery cannot exceed 5 images. Current: ${currentCount}, uploading: ${files.length}.`,
+        `Product gallery cannot exceed ${UPLOAD_LIMITS.PRODUCT_GALLERY.MAX_FILES} images. Current: ${currentCount}, uploading: ${files.length}.`,
         ProductsErrorCode.GALLERY_LIMIT_REACHED,
-        { currentCount, requested: files.length, maxLimit: 5 }
+        { currentCount, requested: files.length, maxLimit: UPLOAD_LIMITS.PRODUCT_GALLERY.MAX_FILES }
       );
     }
 
-    const uploadedStoredFiles: string[] = [];
-    try {
-      for (let i = 0; i < files.length; i++) {
-        const file = files[i];
-        if (!file) continue;
-        validateFileSize(file.size, UPLOAD_LIMITS.PRODUCT_GALLERY_IMAGE_MAX_BYTES, 'Gallery image');
-        const validated = validateImageContent(file.buffer);
+    const validatedFiles = files.map((file) => {
+      validateFileSize(file.size, UPLOAD_LIMITS.PRODUCT_GALLERY_IMAGE_MAX_BYTES, 'Gallery image');
+      const validated = validateImageContent(file.buffer);
+      return { file, validated };
+    });
 
+    const uploadedStoragePaths: string[] = [];
+    const uploadedMediaData: Array<{
+      fileName: string;
+      storageKey: string;
+      publicUrl: string;
+      mimeType: string;
+      fileSize: number;
+    }> = [];
+
+    try {
+      for (const { file, validated } of validatedFiles) {
         const stored = await storageService.upload(
           {
             filename: `${randomUUID()}${validated.extension}`,
@@ -471,36 +594,66 @@ export const productsService = {
           },
           'products/gallery'
         );
-        uploadedStoredFiles.push(stored.path);
-
-        const mediaRecord = await mediaRepository.create({
+        uploadedStoragePaths.push(stored.path);
+        uploadedMediaData.push({
           fileName: file.originalname || stored.filename,
           storageKey: stored.path,
           publicUrl: stored.url,
           mimeType: validated.mimeType,
           fileSize: file.size,
-          uploadedById: actorId,
-          actorId,
         });
-
-        // Set primary if no gallery images exist yet and this is the first one, or if product.imageUrl is empty
-        const isPrimary = currentCount === 0 && i === 0;
-        await productsRepository.addGalleryImage(
-          id,
-          {
-            mediaId: mediaRecord.id,
-            sortOrder: currentCount + i,
-            isPrimary,
-          },
-          actorId
-        );
-
-        if (isPrimary || !product.imageUrl) {
-          await productsRepository.updateImage(id, stored.url, actorId);
-        }
       }
+
+      await productsRepository.withTransaction(async (tx) => {
+        await productsRepository.lockProduct(id, tx);
+        const lockedCount = await productsRepository.countActiveGalleryImages(id, tx);
+        if (lockedCount + files.length > UPLOAD_LIMITS.PRODUCT_GALLERY.MAX_FILES) {
+          throw AppError.conflict(
+            `Product gallery cannot exceed ${UPLOAD_LIMITS.PRODUCT_GALLERY.MAX_FILES} images. Current: ${lockedCount}, uploading: ${files.length}.`,
+            ProductsErrorCode.GALLERY_LIMIT_REACHED,
+            {
+              currentCount: lockedCount,
+              requested: files.length,
+              maxLimit: UPLOAD_LIMITS.PRODUCT_GALLERY.MAX_FILES,
+            }
+          );
+        }
+
+        for (let i = 0; i < uploadedMediaData.length; i++) {
+          const item = uploadedMediaData[i];
+          if (!item) continue;
+          const mediaRecord = await mediaService.createManagedMedia(
+            {
+              fileName: item.fileName,
+              storageKey: item.storageKey,
+              publicUrl: item.publicUrl,
+              mimeType: item.mimeType,
+              fileSize: item.fileSize,
+              uploadedById: actorId,
+              actorId,
+            },
+            tx
+          );
+
+          const isPrimary = lockedCount === 0 && i === 0;
+          await productsRepository.addGalleryImage(
+            id,
+            {
+              mediaId: mediaRecord.id,
+              sortOrder: lockedCount + i,
+              isPrimary,
+            },
+            actorId,
+            tx
+          );
+
+          if (isPrimary) {
+            await productsRepository.updateImage(id, item.publicUrl, actorId, tx);
+          }
+        }
+      });
     } catch (err) {
-      for (const storagePath of uploadedStoredFiles) {
+      for (const storagePath of uploadedStoragePaths) {
         await storageService.delete(storagePath).catch(() => {});
       }
       throw err;
@@ -519,18 +672,24 @@ export const productsService = {
     }
 
     const wasPrimary = img.isPrimary;
-    await productsRepository.removeGalleryImage(id, galleryImageId, actorId);
+    const mediaId = img.mediaId;
 
-    if (wasPrimary) {
-      const refreshed = await productsRepository.findById(id);
-      const remaining = refreshed?.galleryImages ?? [];
-      const firstRemaining = remaining[0];
-      if (firstRemaining) {
-        await productsRepository.setPrimaryGalleryImage(id, firstRemaining.id, actorId);
-      } else {
-        await productsRepository.updateImage(id, null, actorId);
+    await productsRepository.withTransaction(async (tx) => {
+      await productsRepository.lockProduct(id, tx);
+      await productsRepository.removeGalleryImage(id, galleryImageId, actorId, tx);
+
+      if (wasPrimary) {
+        const remaining = await productsRepository.findActiveGalleryImages(id, tx);
+        const firstRemaining = remaining[0];
+        if (firstRemaining) {
+          await productsRepository.setPrimaryGalleryImage(id, firstRemaining.id, actorId, tx);
+        } else {
+          await productsRepository.updateImage(id, null, actorId, tx);
+        }
       }
-    }
+    });
+
+    await mediaService.deleteIfUnreferenced(mediaId, actorId).catch(() => {});
 
     return this.getById(id);
   },
@@ -573,27 +732,31 @@ export const productsService = {
     if (!product) throw AppError.notFound('Product');
 
     const currentCount = await productsRepository.countActiveDocuments(id);
-    if (currentCount + files.length > 3) {
+    if (currentCount + files.length > UPLOAD_LIMITS.PRODUCT_DOCUMENTS.MAX_FILES) {
       throw AppError.conflict(
-        `Product documents cannot exceed 3 PDFs. Current: ${currentCount}, uploading: ${files.length}.`,
+        `Product documents cannot exceed ${UPLOAD_LIMITS.PRODUCT_DOCUMENTS.MAX_FILES} PDFs. Current: ${currentCount}, uploading: ${files.length}.`,
         ProductsErrorCode.DOCUMENT_LIMIT_REACHED,
-        { currentCount, requested: files.length, maxLimit: 3 }
+        { currentCount, requested: files.length, maxLimit: UPLOAD_LIMITS.PRODUCT_DOCUMENTS.MAX_FILES }
       );
     }
 
-    const uploadedStoredFiles: string[] = [];
-    try {
-      for (let i = 0; i < files.length; i++) {
-        const file = files[i];
-        if (!file) continue;
-        validateFileSize(
-          file.size,
-          UPLOAD_LIMITS.PRODUCT_DOCUMENT_MAX_BYTES,
-          'Document',
-          'PDF_FILE_TOO_LARGE'
-        );
-        const validated = validatePdfContent(file.buffer);
+    const validatedFiles = files.map((file) => {
+      validateFileSize(file.size, UPLOAD_LIMITS.PRODUCT_DOCUMENT_MAX_BYTES, 'Document', 'PDF_FILE_TOO_LARGE');
+      const validated = validatePdfContent(file.buffer);
+      return { file, validated };
+    });
 
+    const uploadedStoragePaths: string[] = [];
+    const uploadedMediaData: Array<{
+      fileName: string;
+      storageKey: string;
+      publicUrl: string;
+      mimeType: string;
+      fileSize: number;
+    }> = [];
+
+    try {
+      for (const { file, validated } of validatedFiles) {
         const stored = await storageService.upload(
           {
             filename: `${randomUUID()}${validated.extension}`,
@@ -603,38 +766,67 @@ export const productsService = {
           },
           'products/documents'
         );
-        uploadedStoredFiles.push(stored.path);
-
-        const mediaRecord = await mediaRepository.create({
+        uploadedStoragePaths.push(stored.path);
+        uploadedMediaData.push({
           fileName: file.originalname || stored.filename,
           storageKey: stored.path,
           publicUrl: stored.url,
           mimeType: validated.mimeType,
           fileSize: file.size,
-          uploadedById: actorId,
-          actorId,
         });
-
-        const docTitle =
-          files.length === 1 && title && title.trim()
-            ? title.trim()
-            : file.originalname
-              ? file.originalname.replace(/\.[^/.]+$/, '').trim() || 'Document'
-              : 'Document';
-
-        await productsRepository.addDocument(
-          id,
-          {
-            mediaId: mediaRecord.id,
-            title: docTitle,
-            originalFileName: file.originalname || null,
-            sortOrder: currentCount + i,
-          },
-          actorId
-        );
       }
+
+      await productsRepository.withTransaction(async (tx) => {
+        await productsRepository.lockProduct(id, tx);
+        const lockedCount = await productsRepository.countActiveDocuments(id, tx);
+        if (lockedCount + files.length > UPLOAD_LIMITS.PRODUCT_DOCUMENTS.MAX_FILES) {
+          throw AppError.conflict(
+            `Product documents cannot exceed ${UPLOAD_LIMITS.PRODUCT_DOCUMENTS.MAX_FILES} PDFs. Current: ${lockedCount}, uploading: ${files.length}.`,
+            ProductsErrorCode.DOCUMENT_LIMIT_REACHED,
+            {
+              currentCount: lockedCount,
+              requested: files.length,
+              maxLimit: UPLOAD_LIMITS.PRODUCT_DOCUMENTS.MAX_FILES,
+            }
+          );
+        }
+
+        for (let i = 0; i < uploadedMediaData.length; i++) {
+          const item = uploadedMediaData[i];
+          if (!item) continue;
+          const mediaRecord = await mediaService.createManagedMedia(
+            {
+              fileName: item.fileName,
+              storageKey: item.storageKey,
+              publicUrl: item.publicUrl,
+              mimeType: item.mimeType,
+              fileSize: item.fileSize,
+              uploadedById: actorId,
+              actorId,
+            },
+            tx
+          );
+
+          const docTitle =
+            files.length === 1 && title && title.trim()
+              ? title.trim()
+              : item.fileName.replace(/\.[^/.]+$/, '').trim() || 'Document';
+
+          await productsRepository.addDocument(
+            id,
+            {
+              mediaId: mediaRecord.id,
+              title: docTitle,
+              originalFileName: item.fileName,
+              sortOrder: lockedCount + i,
+            },
+            actorId,
+            tx
+          );
+        }
+      });
     } catch (err) {
-      for (const storagePath of uploadedStoredFiles) {
+      for (const storagePath of uploadedStoragePaths) {
         await storageService.delete(storagePath).catch(() => {});
       }
       throw err;
@@ -652,7 +844,14 @@ export const productsService = {
       throw AppError.notFound('Product document', ProductsErrorCode.DOCUMENT_NOT_FOUND);
     }
 
-    await productsRepository.removeDocument(id, documentId, actorId);
+    const mediaId = doc.mediaId;
+    await productsRepository.withTransaction(async (tx) => {
+      await productsRepository.lockProduct(id, tx);
+      await productsRepository.removeDocument(id, documentId, actorId, tx);
+    });
+
+    await mediaService.deleteIfUnreferenced(mediaId, actorId).catch(() => {});
+
     return this.getById(id);
   },
 
@@ -694,62 +893,107 @@ export const productsService = {
     if (!product) throw AppError.notFound('Product');
 
     const currentCount = await productsRepository.countActiveVideos(id);
-    if (currentCount + files.length > 2) {
+    if (currentCount + files.length > UPLOAD_LIMITS.PRODUCT_VIDEOS.MAX_FILES) {
       throw AppError.conflict(
-        `Product videos cannot exceed 2 videos. Current: ${currentCount}, uploading: ${files.length}.`,
+        `Product videos cannot exceed ${UPLOAD_LIMITS.PRODUCT_VIDEOS.MAX_FILES} videos. Current: ${currentCount}, uploading: ${files.length}.`,
         ProductsErrorCode.PRODUCT_VIDEO_LIMIT_REACHED,
-        { currentCount, requested: files.length, maxLimit: 2 }
+        { currentCount, requested: files.length, maxLimit: UPLOAD_LIMITS.PRODUCT_VIDEOS.MAX_FILES }
       );
     }
 
-    const uploadedStoredFiles: string[] = [];
-    try {
-      for (let i = 0; i < files.length; i++) {
-        const file = files[i];
-        if (!file) continue;
-        validateFileSize(file.size, UPLOAD_LIMITS.PRODUCT_VIDEO_MAX_BYTES, 'Video', 'VIDEO_FILE_TOO_LARGE');
+    const validatedFiles = files.map((file) => {
+      validateFileSize(file.size, UPLOAD_LIMITS.PRODUCT_VIDEO_MAX_BYTES, 'Video', 'VIDEO_FILE_TOO_LARGE');
+      let mimeType = file.mimetype;
+      let extension = mimeType === 'video/webm' ? '.webm' : '.mp4';
+      if (file.buffer) {
         const validated = validateVideoContent(file.buffer);
+        mimeType = validated.mimeType;
+        extension = validated.extension;
+      }
+      return { file, mimeType, extension };
+    });
 
+    const uploadedStoragePaths: string[] = [];
+    const uploadedMediaData: Array<{
+      fileName: string;
+      storageKey: string;
+      publicUrl: string;
+      mimeType: string;
+      fileSize: number;
+    }> = [];
+
+    try {
+      for (const { file, mimeType, extension } of validatedFiles) {
         const stored = await storageService.upload(
           {
-            filename: `${randomUUID()}${validated.extension}`,
+            filename: `${randomUUID()}${extension}`,
             buffer: file.buffer,
-            mimeType: validated.mimeType,
+            path: file.path,
+            mimeType,
             size: file.size,
           },
           'products/videos'
         );
-        uploadedStoredFiles.push(stored.path);
-
-        const mediaRecord = await mediaRepository.create({
+        uploadedStoragePaths.push(stored.path);
+        uploadedMediaData.push({
           fileName: file.originalname || stored.filename,
           storageKey: stored.path,
           publicUrl: stored.url,
-          mimeType: validated.mimeType,
+          mimeType,
           fileSize: file.size,
-          uploadedById: actorId,
-          actorId,
         });
-
-        const videoTitle =
-          files.length === 1 && title && title.trim()
-            ? title.trim()
-            : file.originalname
-              ? file.originalname.replace(/\.[^/.]+$/, '').trim() || null
-              : null;
-
-        await productsRepository.addVideo(
-          id,
-          {
-            mediaId: mediaRecord.id,
-            title: videoTitle,
-            sortOrder: currentCount + i,
-          },
-          actorId
-        );
       }
+
+      await productsRepository.withTransaction(async (tx) => {
+        await productsRepository.lockProduct(id, tx);
+        const lockedCount = await productsRepository.countActiveVideos(id, tx);
+        if (lockedCount + files.length > UPLOAD_LIMITS.PRODUCT_VIDEOS.MAX_FILES) {
+          throw AppError.conflict(
+            `Product videos cannot exceed ${UPLOAD_LIMITS.PRODUCT_VIDEOS.MAX_FILES} videos. Current: ${lockedCount}, uploading: ${files.length}.`,
+            ProductsErrorCode.PRODUCT_VIDEO_LIMIT_REACHED,
+            {
+              currentCount: lockedCount,
+              requested: files.length,
+              maxLimit: UPLOAD_LIMITS.PRODUCT_VIDEOS.MAX_FILES,
+            }
+          );
+        }
+
+        for (let i = 0; i < uploadedMediaData.length; i++) {
+          const item = uploadedMediaData[i];
+          if (!item) continue;
+          const mediaRecord = await mediaService.createManagedMedia(
+            {
+              fileName: item.fileName,
+              storageKey: item.storageKey,
+              publicUrl: item.publicUrl,
+              mimeType: item.mimeType,
+              fileSize: item.fileSize,
+              uploadedById: actorId,
+              actorId,
+            },
+            tx
+          );
+
+          const videoTitle =
+            files.length === 1 && title && title.trim()
+              ? title.trim()
+              : item.fileName.replace(/\.[^/.]+$/, '').trim() || 'Video';
+
+          await productsRepository.addVideo(
+            id,
+            {
+              mediaId: mediaRecord.id,
+              title: videoTitle,
+              sortOrder: lockedCount + i,
+            },
+            actorId,
+            tx
+          );
+        }
+      });
     } catch (err) {
-      for (const storagePath of uploadedStoredFiles) {
+      for (const storagePath of uploadedStoragePaths) {
         await storageService.delete(storagePath).catch(() => {});
       }
       throw err;
@@ -767,7 +1011,14 @@ export const productsService = {
       throw AppError.notFound('Product video', ProductsErrorCode.VIDEO_NOT_FOUND);
     }
 
-    await productsRepository.removeVideo(id, videoId, actorId);
+    const mediaId = video.mediaId;
+    await productsRepository.withTransaction(async (tx) => {
+      await productsRepository.lockProduct(id, tx);
+      await productsRepository.removeVideo(id, videoId, actorId, tx);
+    });
+
+    await mediaService.deleteIfUnreferenced(mediaId, actorId).catch(() => {});
+
     return this.getById(id);
   },
 
@@ -801,6 +1052,149 @@ export const productsService = {
     }
 
     await productsRepository.reorderVideos(id, videoIds, actorId);
+    return this.getById(id);
+  },
+
+  // Features
+  async createFeature(id: string, data: CreateProductFeatureBody, actorId: string): Promise<ProductDto> {
+    const product = await productsRepository.findById(id);
+    if (!product) throw AppError.notFound('Product');
+
+    await productsRepository.addFeature(id, data, actorId);
+    return this.getById(id);
+  },
+
+  async updateFeature(
+    id: string,
+    featureId: string,
+    data: UpdateProductFeatureBody,
+    actorId: string
+  ): Promise<ProductDto> {
+    const product = await productsRepository.findById(id);
+    if (!product) throw AppError.notFound('Product');
+
+    const feature = await productsRepository.findActiveFeatureById(id, featureId);
+    if (!feature) {
+      throw AppError.notFound('Product feature', ProductsErrorCode.FEATURE_NOT_FOUND);
+    }
+
+    await productsRepository.updateFeature(id, featureId, data, actorId);
+    return this.getById(id);
+  },
+
+  async removeFeature(id: string, featureId: string, actorId: string): Promise<ProductDto> {
+    const product = await productsRepository.findById(id);
+    if (!product) throw AppError.notFound('Product');
+
+    const feature = await productsRepository.findActiveFeatureById(id, featureId);
+    if (!feature) {
+      throw AppError.notFound('Product feature', ProductsErrorCode.FEATURE_NOT_FOUND);
+    }
+
+    await productsRepository.removeFeature(id, featureId, actorId);
+    return this.getById(id);
+  },
+
+  async reorderFeatures(id: string, featureIds: string[], actorId: string): Promise<ProductDto> {
+    const product = await productsRepository.findById(id);
+    if (!product) throw AppError.notFound('Product');
+
+    const existing = product.features ?? [];
+    const existingIds = new Set(existing.map((f) => f.id));
+    if (featureIds.length !== existing.length || !featureIds.every((fid) => existingIds.has(fid))) {
+      throw AppError.badRequest('Provided feature IDs must match active features for this product');
+    }
+
+    await productsRepository.reorderFeatures(id, featureIds, actorId);
+    return this.getById(id);
+  },
+
+  // Key Benefits
+  async createKeyBenefit(
+    id: string,
+    data: CreateProductKeyBenefitBody,
+    actorId: string
+  ): Promise<ProductDto> {
+    const product = await productsRepository.findById(id);
+    if (!product) throw AppError.notFound('Product');
+
+    await productsRepository.addKeyBenefit(id, data, actorId);
+    return this.getById(id);
+  },
+
+  async updateKeyBenefit(
+    id: string,
+    benefitId: string,
+    data: UpdateProductKeyBenefitBody,
+    actorId: string
+  ): Promise<ProductDto> {
+    const product = await productsRepository.findById(id);
+    if (!product) throw AppError.notFound('Product');
+
+    const benefit = await productsRepository.findActiveKeyBenefitById(id, benefitId);
+    if (!benefit) {
+      throw AppError.notFound('Product key benefit', ProductsErrorCode.KEY_BENEFIT_NOT_FOUND);
+    }
+
+    await productsRepository.updateKeyBenefit(id, benefitId, data, actorId);
+    return this.getById(id);
+  },
+
+  async removeKeyBenefit(id: string, benefitId: string, actorId: string): Promise<ProductDto> {
+    const product = await productsRepository.findById(id);
+    if (!product) throw AppError.notFound('Product');
+
+    const benefit = await productsRepository.findActiveKeyBenefitById(id, benefitId);
+    if (!benefit) {
+      throw AppError.notFound('Product key benefit', ProductsErrorCode.KEY_BENEFIT_NOT_FOUND);
+    }
+
+    await productsRepository.removeKeyBenefit(id, benefitId, actorId);
+    return this.getById(id);
+  },
+
+  async reorderKeyBenefits(id: string, benefitIds: string[], actorId: string): Promise<ProductDto> {
+    const product = await productsRepository.findById(id);
+    if (!product) throw AppError.notFound('Product');
+
+    const existing = product.keyBenefits ?? [];
+    const existingIds = new Set(existing.map((b) => b.id));
+    if (benefitIds.length !== existing.length || !benefitIds.every((bid) => existingIds.has(bid))) {
+      throw AppError.badRequest('Provided benefit IDs must match active key benefits for this product');
+    }
+
+    await productsRepository.reorderKeyBenefits(id, benefitIds, actorId);
+    return this.getById(id);
+  },
+
+  // Related Products
+  async setRelatedProducts(id: string, relatedProductIds: string[], actorId: string): Promise<ProductDto> {
+    const product = await productsRepository.findById(id);
+    if (!product) throw AppError.notFound('Product');
+
+    if (relatedProductIds.includes(id)) {
+      throw AppError.badRequest(
+        'A product cannot be related to itself',
+        ProductsErrorCode.CANNOT_RELATE_TO_SELF
+      );
+    }
+
+    const uniqueIds = Array.from(new Set(relatedProductIds));
+    if (uniqueIds.length !== relatedProductIds.length) {
+      throw AppError.badRequest('Duplicate related products are not allowed');
+    }
+
+    if (uniqueIds.length > 0) {
+      const found = await productsRepository.findByIds(uniqueIds);
+      if (found.length !== uniqueIds.length) {
+        throw AppError.notFound(
+          'One or more related products were not found',
+          ProductsErrorCode.RELATED_PRODUCT_NOT_FOUND
+        );
+      }
+    }
+
+    await productsRepository.setRelatedProducts(id, uniqueIds, actorId);
     return this.getById(id);
   },
 

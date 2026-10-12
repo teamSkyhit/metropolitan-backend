@@ -76,48 +76,79 @@ npm run dev             # http://localhost:5000
 
 Full request/response contracts: Swagger UI at `/api/docs`. Swagger is available in local and staging environments, and disabled in production.
 
-### Product Media Architecture
+- **Product Media Architecture**:
+  - **Storage Architecture**:
+    - Binary file contents are **never** stored in PostgreSQL.
+    - Files are streamed and stored in S3/Cloudflare R2 object storage; PostgreSQL only stores relational metadata and references (`Media`, `ProductGalleryImage`, `ProductVideo`, `ProductDocument`).
+    - Strict magic-byte inspection prevents MIME spoofing, script embedding, and renamed non-media payloads.
+  - **Batch Atomicity & Zero-Orphan Guarantee**:
+    - Multi-file batch uploads (Gallery images, Videos, Documents) execute within an atomic database transaction wrapped with product-level concurrency locks (`SELECT ... FOR UPDATE`).
+    - If any file fails validation, storage upload, Media creation, or join creation, all newly uploaded storage objects in that batch are pruned immediately and the DB transaction rolls back completely.
+    - Zero orphan `Media` rows or dangling relation rows are left in the database.
+  - **Concurrency & Invariant Protection**:
+    - Row-level locking on the parent Product prevents race conditions where concurrent requests could exceed capacity limits (max 5 gallery, max 2 videos, max 3 documents) or designate conflicting primary images.
+  - **Media Deletion Lifecycle**:
+    - Deleting a Product Gallery image, Video, or Document soft-deletes the join row.
+    - If the associated `Media` asset is unreferenced anywhere else across the catalog/CMS, the media record is soft-deleted and its file in storage is permanently deleted.
+    - If the `Media` asset is shared (referenced elsewhere), the storage object and Media record are preserved.
+  - **Soft-Delete Reference Isolation**:
+    - Media reference checks only count relations where both the join row and parent entity are active (`deletedAt IS NULL`). Soft-deleted products never block deletion of their unused media assets.
+  - **Product Gallery (Images)**:
+    - **Limit**: Maximum 5 active gallery images per Product.
+    - **Size Limit**: Maximum 5 MB per image.
+    - **Allowed Formats**: JPG, JPEG, PNG, WebP (magic-byte validated).
+    - **Multipart Field**: `images`.
+    - **Primary Image & imageUrl Synchronization**: Exactly zero or one primary image (`isPrimary`). When gallery images exist, the primary image is canonical and mirrors `Product.imageUrl`. Setting a primary image syncs `Product.imageUrl`. Deleting the primary image automatically promotes the next active image and syncs `Product.imageUrl`. Deleting the last gallery image clears `Product.imageUrl`.
+    - **Endpoints**:
+      - `POST /api/v1/products/:id/gallery` (upload up to remaining allowance, canonical field `images`)
+      - `PATCH /api/v1/products/:id/gallery/reorder` (reorder gallery items by UUID array)
+      - `PATCH /api/v1/products/:id/gallery/:galleryImageId/primary` (designate primary image)
+      - `DELETE /api/v1/products/:id/gallery/:galleryImageId` (remove gallery image and clean unreferenced media)
+  - **Product Videos (Memory-Safe Streaming)**:
+    - **Limit**: Maximum 2 active videos per Product.
+    - **Size Limit**: Maximum 100 MB per video.
+    - **Allowed Formats**: MP4 (`video/mp4`, strictly validated for safe compatible brands: `isom`, `iso2`, `mp41`, `mp42`, `avc1`, `mp71`; rejects QuickTime MOV, HEIF, 3GP), WebM (`video/webm`, EBML header validated with `webm` DocType).
+    - **Memory Safety**: Video uploads stream to disk temp files without buffering 100 MB payloads into Node memory. Content validation inspects only the first 512 bytes of the file, then streams directly to S3/R2 storage, and cleans up temporary files in `finally` handlers.
+    - **Multipart Field**: Canonical field `videos` (alias `video`).
+    - **Endpoints**:
+      - `POST /api/v1/products/:id/videos` (upload up to remaining allowance, canonical field `videos`)
+      - `PATCH /api/v1/products/:id/videos/reorder` (reorder videos by UUID array)
+      - `PATCH /api/v1/products/:id/videos/:videoId` (update optional title)
+      - `DELETE /api/v1/products/:id/videos/:videoId` (remove video and clean unreferenced media)
+  - **Product Documents (PDFs)**:
+    - **Limit**: Maximum 3 active PDF documents per Product.
+    - **Size Limit**: Maximum 10 MB per PDF.
+    - **Allowed Formats**: `application/pdf` only (strictly validated with `%PDF-` binary magic header).
+    - **Multipart Field**: Canonical field `documents` (backward-compatible alias `file`).
+    - **Metadata**: Each document supports a title, original filename, and deterministic sort order.
+    - **Endpoints**:
+      - `POST /api/v1/products/:id/documents` (upload up to remaining allowance, canonical field `documents`)
+      - `PATCH /api/v1/products/:id/documents/:documentId` (update title)
+      - `PATCH /api/v1/products/:id/documents/reorder` (reorder documents by UUID array)
+      - `DELETE /api/v1/products/:id/documents/:documentId` (remove document and clean unreferenced media)
 
-- **Storage Architecture**:
-  - Binary file contents are **never** stored in PostgreSQL.
-  - Files are streamed and stored in S3/Cloudflare R2 object storage; PostgreSQL only stores relational metadata and references (`Media`, `ProductGalleryImage`, `ProductVideo`, `ProductDocument`).
-  - Strict magic-byte inspection prevents MIME spoofing, script embedding, and renamed non-media payloads.
-- **Product Gallery (Images)**:
-  - **Limit**: Maximum 5 active gallery images per Product.
-  - **Size Limit**: Maximum 5 MB per image.
-  - **Allowed Formats**: JPG, JPEG, PNG, WebP (magic-byte validated).
-  - **Multipart Field**: `images`.
-  - **Primary Image**: Exactly zero or one primary image (`isPrimary`). If gallery has images and none is explicitly designated, the first image is treated as primary. When the primary image is removed, another active image is automatically promoted to primary.
-  - **Backward Compatibility**: `imageUrl` is preserved on product responses. If legacy `imageUrl` is null, it automatically falls back to the primary gallery image.
-  - **Endpoints**:
-    - `POST /api/v1/products/:id/gallery` (upload up to remaining allowance, canonical field `images`)
-    - `PATCH /api/v1/products/:id/gallery/reorder` (reorder gallery items by UUID array)
-    - `PATCH /api/v1/products/:id/gallery/:galleryImageId/primary` (designate primary image)
-    - `DELETE /api/v1/products/:id/gallery/:galleryImageId` (remove gallery image and clean media)
-- **Product Videos**:
-  - **Limit**: Maximum 2 active videos per Product.
-  - **Size Limit**: Maximum 100 MB per video.
-  - **Allowed Formats**: MP4 (`video/mp4`, container signature validated via `ftyp`), WebM (`video/webm`, EBML header validated with `webm` DocType). Rejects non-WebM MKV, AVI, MOV, EXE, SVG, and corrupted streams.
-  - **Multipart Field**: Canonical field `videos` (alias `video`).
-  - **Batch Behavior**: Reject entire request if existing count + upload count > 2. No partial attachments.
-  - **Public Exposure**: Public catalog product detail exposes `id`, `title`, `publicUrl`, and `sortOrder`. Public listing returns lightweight summary.
-  - **Endpoints**:
-    - `POST /api/v1/products/:id/videos` (upload up to remaining allowance, canonical field `videos`)
-    - `PATCH /api/v1/products/:id/videos/reorder` (reorder videos by UUID array)
-    - `PATCH /api/v1/products/:id/videos/:videoId` (update optional title)
-    - `DELETE /api/v1/products/:id/videos/:videoId` (remove video and clean media)
-- **Product Documents (PDFs)**:
-  - **Limit**: Maximum 3 active PDF documents per Product.
-  - **Size Limit**: Maximum 10 MB per PDF.
-  - **Allowed Formats**: `application/pdf` only (strictly validated with `%PDF-` binary magic header).
-  - **Multipart Field**: Canonical field `documents` (backward-compatible alias `file`).
-  - **Metadata**: Each document supports a title (defaults to filename without extension if omitted), original filename, and deterministic sort order.
-  - **Public Exposure**: Public catalog DTO exposes only public URL, title, original filename, and sort order. Private storage keys (`storageKey`) and credentials are never exposed publicly.
-  - **Endpoints**:
-    - `POST /api/v1/products/:id/documents` (upload up to remaining allowance, canonical field `documents`)
-    - `PATCH /api/v1/products/:id/documents/:documentId` (update title)
-    - `PATCH /api/v1/products/:id/documents/reorder` (reorder documents by UUID array)
-    - `DELETE /api/v1/products/:id/documents/:documentId` (remove document and clean media)
+### Single Product Detail Page Model
+
+- **Product Scalar & Overview Fields**:
+  - `shortDescription` (String, max 500 chars): Hero summary beside product name and SKU.
+  - `description` / `overview` (String): Dedicated Product Overview content.
+  - `series` (String, max 100 chars): Product series code/identifier (e.g. `HDO / HDP`).
+  - `price` & `priceVisibility`: Preserves optional pricing and visibility settings (`HIDDEN`, `VISIBLE`, `CALL_FOR_PRICE`).
+- **Product Features (ProductFeature)**:
+  - Dynamic ordered features with `icon` (controlled key/URL), `title`, `description`, `sortOrder`.
+  - Endpoints: `POST /api/v1/products/:id/features`, `PATCH /api/v1/products/:id/features/:featureId`, `PATCH /api/v1/products/:id/features/reorder`, `DELETE /api/v1/products/:id/features/:featureId`.
+- **Key Benefits (ProductKeyBenefit)**:
+  - Dynamic ordered key benefits with `icon`, `title`, `description`, `sortOrder`.
+  - Endpoints: `POST /api/v1/products/:id/key-benefits`, `PATCH /api/v1/products/:id/key-benefits/:benefitId`, `PATCH /api/v1/products/:id/key-benefits/reorder`, `DELETE /api/v1/products/:id/key-benefits/:benefitId`.
+- **Related Products (ProductRelatedProduct)**:
+  - Explicit ordered product relations. Validates self-relation prevention and duplicate prevention.
+  - Endpoints: `PUT /api/v1/products/:id/related-products`.
+- **SEO Meta**:
+  - `metaTitle`, `metaDescription`, `metaKeywords`, `canonicalUrl`, `ogImageUrl` with automated fallbacks.
+- **Public Product Detail Contract (`GET /api/v1/public/products/:slug`)**:
+  - Returns complete dynamic shape with gallery, videos, documents, specifications, features, key benefits, brand (with `logoUrl`), category (with `imageUrl` and `bannerUrl`), related products, and SEO metadata.
+- **Public Product Listing (`GET /api/v1/public/products`)**:
+  - Lightweight card payload omitting heavy relations (`features`, `keyBenefits`, `relatedProducts`, `gallery`, `videos`, `documents`) for optimal performance.
 
 ### Category Media Architecture
 
@@ -135,11 +166,12 @@ Full request/response contracts: Swagger UI at `/api/docs`. Swagger is available
   - **Multipart Field**: `banner`.
   - **Canonical Method**: `PUT /api/v1/categories/:id/banner` (create or replace). Backward-compatible alias `POST` mounted.
   - **Delete**: `DELETE /api/v1/categories/:id/banner`.
-- **Independence & Safe Replacement**:
+- **Independence & Atomic Replacement**:
   - Category Image and Category Banner have independent lifecycles. Modifying or deleting the Image never impacts the Banner, and vice-versa.
-  - Safe replacement sequence: upload new asset → persist DB reference → clean up previous asset. If database persistence fails, the new uploaded object is immediately pruned.
+  - Safe replacement sequence: upload new asset → atomic database transaction (create `Media` record + update `Category` with `imageUrl`/`imageMediaId` or `bannerUrl`/`bannerMediaId`) → clean up previous asset.
+  - If `Media` creation or `Category` update fails, the database rolls back, no partial URL is persisted, and the newly uploaded storage object is immediately cleaned up.
 - **Media Reference Protection**:
-  - `DELETE /api/v1/media/:id` is blocked with HTTP 409 Conflict (`MEDIA_IN_USE`) if referenced by `Product.imageUrl`, `ProductGalleryImage`, `ProductVideo`, `ProductDocument`, `Category.imageMediaId/imageUrl`, `Category.bannerMediaId/bannerUrl`, Brand asset, or Homepage section slide.
+  - `DELETE /api/v1/media/:id` is blocked with HTTP 409 Conflict (`MEDIA_IN_USE`) if referenced by active `Product.imageUrl`, `ProductGalleryImage`, `ProductVideo`, `ProductDocument`, `Category.imageMediaId/imageUrl`, `Category.bannerMediaId/bannerUrl`, Brand asset, or Homepage section slide.
 
 ### Restore Policy Summary
 

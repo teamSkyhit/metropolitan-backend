@@ -212,9 +212,11 @@ export const categoriesRepository = {
     id: string,
     imageUrl: string | null,
     imageMediaId: string | null,
-    actorId: string
+    actorId: string,
+    tx?: Prisma.TransactionClient
   ): Promise<Category> {
-    return prisma.category.update({
+    const db = tx ?? prisma;
+    return db.category.update({
       where: { id },
       data: {
         imageUrl,
@@ -228,9 +230,11 @@ export const categoriesRepository = {
     id: string,
     bannerUrl: string | null,
     bannerMediaId: string | null = null,
-    actorId: string = ''
+    actorId: string = '',
+    tx?: Prisma.TransactionClient
   ): Promise<Category> {
-    return prisma.category.update({
+    const db = tx ?? prisma;
+    return db.category.update({
       where: { id },
       data: {
         bannerUrl,
@@ -238,5 +242,9 @@ export const categoriesRepository = {
         ...updatedBy(actorId),
       },
     });
+  },
+
+  async withTransaction<T>(fn: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
+    return prisma.$transaction(fn);
   },
 };

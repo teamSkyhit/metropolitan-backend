@@ -1,3 +1,7 @@
+import { randomUUID } from 'node:crypto';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import type { Request, Response, NextFunction, RequestHandler } from 'express';
 import multer, { MulterError } from 'multer';
 import { AppError } from '../errors';
@@ -8,6 +12,22 @@ import {
   validatePdfContent,
   validateVideoContent,
 } from './file-validator';
+
+const videoTempDir = path.join(os.tmpdir(), 'metropolitan-video-uploads');
+try {
+  fs.mkdirSync(videoTempDir, { recursive: true });
+} catch {
+  // ignore if already exists
+}
+
+const videoDiskStorage = multer.diskStorage({
+  destination: (_req, _file, cb) => {
+    cb(null, videoTempDir);
+  },
+  filename: (_req, _file, cb) => {
+    cb(null, `vid_${randomUUID()}_${Date.now()}.tmp`);
+  },
+});
 
 export interface UploadOptions {
   maxBytes: number;
@@ -239,9 +259,9 @@ export function requireVideoUpload(options?: { maxBytes?: number; maxFiles?: num
   const maxFiles = options?.maxFiles ?? 2;
 
   const upload = multer({
-    storage: multer.memoryStorage(),
+    storage: videoDiskStorage,
     limits: {
-      fileSize: 105 * 1024 * 1024,
+      fileSize: maxBytes,
       files: maxFiles,
     },
   }).fields([
@@ -250,8 +270,20 @@ export function requireVideoUpload(options?: { maxBytes?: number; maxFiles?: num
   ]);
 
   return (req: Request, res: Response, next: NextFunction): void => {
-    upload(req, res, (err: unknown) => {
+    upload(req, res, async (err: unknown) => {
+      const filesDict = req.files as Record<string, Express.Multer.File[]> | undefined;
+      const fileList: Express.Multer.File[] = [...(filesDict?.videos ?? []), ...(filesDict?.video ?? [])];
+
+      const cleanupDiskFiles = async () => {
+        for (const file of fileList) {
+          if (file.path) {
+            await fs.promises.unlink(file.path).catch(() => {});
+          }
+        }
+      };
+
       if (err) {
+        await cleanupDiskFiles();
         if (err instanceof MulterError) {
           if (err.code === 'LIMIT_FILE_SIZE') {
             return next(
@@ -278,14 +310,12 @@ export function requireVideoUpload(options?: { maxBytes?: number; maxFiles?: num
         return next(err);
       }
 
-      const filesDict = req.files as Record<string, Express.Multer.File[]> | undefined;
-      const fileList: Express.Multer.File[] = [...(filesDict?.videos ?? []), ...(filesDict?.video ?? [])];
-
       if (fileList.length === 0) {
         return next(AppError.badRequest("No file uploaded. Expected multipart field: 'videos'"));
       }
 
       if (fileList.length > maxFiles) {
+        await cleanupDiskFiles();
         return next(
           AppError.badRequest(
             `Maximum ${maxFiles} videos allowed per upload request`,
@@ -297,12 +327,42 @@ export function requireVideoUpload(options?: { maxBytes?: number; maxFiles?: num
       try {
         for (const file of fileList) {
           validateFileSize(file.size, maxBytes, 'Video', 'VIDEO_FILE_TOO_LARGE');
-          const validated = validateVideoContent(file.buffer);
+
+          // Read only initial header chunk (up to 512 bytes) to inspect container signatures safely
+          let headerBuffer: Buffer;
+          if (file.path) {
+            const handle = await fs.promises.open(file.path, 'r');
+            try {
+              const readLength = Math.min(file.size, 512);
+              headerBuffer = Buffer.alloc(readLength);
+              if (readLength > 0) {
+                await handle.read(headerBuffer, 0, readLength, 0);
+              }
+            } finally {
+              await handle.close();
+            }
+          } else if (file.buffer) {
+            headerBuffer = file.buffer.subarray(0, Math.min(file.buffer.length, 512));
+          } else {
+            throw AppError.badRequest('File content is unavailable', 'INVALID_VIDEO_FILE');
+          }
+
+          const validated = validateVideoContent(headerBuffer);
           file.mimetype = validated.mimeType;
         }
+
+        // Automatic cleanup of temp disk files when response finishes or connection terminates
+        res.on('finish', () => {
+          cleanupDiskFiles().catch(() => {});
+        });
+        res.on('close', () => {
+          cleanupDiskFiles().catch(() => {});
+        });
+
         (req as Request & { uploadedFiles?: Express.Multer.File[] }).uploadedFiles = fileList;
         next();
       } catch (validationErr) {
+        await cleanupDiskFiles();
         next(validationErr);
       }
     });

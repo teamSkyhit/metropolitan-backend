@@ -242,30 +242,42 @@ enum ProductStatus {
 
 /// Product representation.
 model Product {
-  id              String        @id @default(uuid()) @db.Uuid
-  name            String        @db.VarChar(200)
-  slug            String        @unique @db.VarChar(120)
-  sku             String        @unique @db.VarChar(100)
-  brandId         String        @map("brand_id") @db.Uuid
-  categoryId      String        @map("category_id") @db.Uuid
-  description     String?       @db.Text
-  price           Decimal?      @db.Decimal(12, 2)
-  priceVisibility Boolean       @default(true) @map("price_visibility")
-  status          ProductStatus @default(DRAFT)
-  hotDeal         Boolean       @default(false) @map("hot_deal")
-  imageUrl        String?       @map("image_url") @db.VarChar(500)
-  specifications  Json?         @db.JsonB
-  createdAt       DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt       DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
-  deletedAt       DateTime?     @map("deleted_at") @db.Timestamptz(3)
-  createdById     String?       @map("created_by_id") @db.Uuid
-  updatedById     String?       @map("updated_by_id") @db.Uuid
+  id               String        @id @default(uuid()) @db.Uuid
+  name             String        @db.VarChar(200)
+  slug             String        @unique @db.VarChar(120)
+  sku              String        @unique @db.VarChar(100)
+  brandId          String        @map("brand_id") @db.Uuid
+  categoryId       String        @map("category_id") @db.Uuid
+  shortDescription String?       @map("short_description") @db.VarChar(500)
+  description      String?       @db.Text
+  overview         String?       @db.Text
+  series           String?       @db.VarChar(100)
+  price            Decimal?      @db.Decimal(12, 2)
+  priceVisibility  Boolean       @default(true) @map("price_visibility")
+  status           ProductStatus @default(DRAFT)
+  hotDeal          Boolean       @default(false) @map("hot_deal")
+  imageUrl         String?       @map("image_url") @db.VarChar(500)
+  specifications   Json?         @db.JsonB
+  metaTitle        String?       @map("meta_title") @db.VarChar(200)
+  metaDescription  String?       @map("meta_description") @db.VarChar(500)
+  metaKeywords     String?       @map("meta_keywords") @db.VarChar(500)
+  canonicalUrl     String?       @map("canonical_url") @db.VarChar(500)
+  ogImageUrl       String?       @map("og_image_url") @db.VarChar(500)
+  createdAt        DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt        DateTime?     @map("deleted_at") @db.Timestamptz(3)
+  createdById      String?       @map("created_by_id") @db.Uuid
+  updatedById      String?       @map("updated_by_id") @db.Uuid
 
-  brand         Brand                 @relation(fields: [brandId], references: [id], onDelete: Restrict)
-  category      Category              @relation(fields: [categoryId], references: [id], onDelete: Restrict)
-  galleryImages ProductGalleryImage[]
-  videos        ProductVideo[]
-  documents     ProductDocument[]
+  brand               Brand                   @relation(fields: [brandId], references: [id], onDelete: Restrict)
+  category            Category                @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  galleryImages       ProductGalleryImage[]
+  videos              ProductVideo[]
+  documents           ProductDocument[]
+  features            ProductFeature[]
+  keyBenefits         ProductKeyBenefit[]
+  relatedProducts     ProductRelatedProduct[] @relation("ProductRelatedTo")
+  relatedFromProducts ProductRelatedProduct[] @relation("ProductRelatedFrom")
 
   @@index([brandId])
   @@index([categoryId])
@@ -274,6 +286,65 @@ model Product {
   @@index([deletedAt, createdAt])
   @@index([name])
   @@map("products")
+}
+
+/// Product feature item (ordered, dynamic features for product detail).
+model ProductFeature {
+  id          String    @id @default(uuid()) @db.Uuid
+  productId   String    @map("product_id") @db.Uuid
+  icon        String    @db.VarChar(100)
+  title       String    @db.VarChar(200)
+  description String    @db.VarChar(2000)
+  sortOrder   Int       @default(0) @map("sort_order")
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt   DateTime? @map("deleted_at") @db.Timestamptz(3)
+  createdById String?   @map("created_by_id") @db.Uuid
+  updatedById String?   @map("updated_by_id") @db.Uuid
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@index([productId, deletedAt, sortOrder])
+  @@index([deletedAt, createdAt])
+  @@map("product_features")
+}
+
+/// Product key benefit item (ordered, dynamic benefits for product detail).
+model ProductKeyBenefit {
+  id          String    @id @default(uuid()) @db.Uuid
+  productId   String    @map("product_id") @db.Uuid
+  icon        String    @db.VarChar(100)
+  title       String    @db.VarChar(200)
+  description String    @db.VarChar(2000)
+  sortOrder   Int       @default(0) @map("sort_order")
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt   DateTime? @map("deleted_at") @db.Timestamptz(3)
+  createdById String?   @map("created_by_id") @db.Uuid
+  updatedById String?   @map("updated_by_id") @db.Uuid
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@index([productId, deletedAt, sortOrder])
+  @@index([deletedAt, createdAt])
+  @@map("product_key_benefits")
+}
+
+/// Product to related product relationship.
+model ProductRelatedProduct {
+  id               String   @id @default(uuid()) @db.Uuid
+  productId        String   @map("product_id") @db.Uuid
+  relatedProductId String   @map("related_product_id") @db.Uuid
+  sortOrder        Int      @default(0) @map("sort_order")
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  product        Product @relation("ProductRelatedTo", fields: [productId], references: [id], onDelete: Restrict)
+  relatedProduct Product @relation("ProductRelatedFrom", fields: [relatedProductId], references: [id], onDelete: Restrict)
+
+  @@unique([productId, relatedProductId])
+  @@index([productId, sortOrder])
+  @@index([relatedProductId])
+  @@map("product_related_products")
 }
 
 /// Product gallery image (maximum 5 active images per product).

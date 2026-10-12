@@ -25,7 +25,13 @@ export class LocalStorageService implements IStorageService {
 
     await fs.mkdir(targetDir, { recursive: true });
     const targetPath = path.join(targetDir, filename);
-    await fs.writeFile(targetPath, file.buffer);
+    if (file.path) {
+      await fs.copyFile(file.path, targetPath);
+    } else if (file.buffer) {
+      await fs.writeFile(targetPath, file.buffer);
+    } else {
+      throw new Error('StorageFile must have either a buffer or a path');
+    }
 
     const relativeUrl = `${this.baseUrl}/${folder}/${filename}`;
     const relativePath = `${folder}/${filename}`;

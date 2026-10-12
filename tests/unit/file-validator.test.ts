@@ -156,6 +156,71 @@ describe('file-validator (unit)', () => {
       );
     });
 
+    it('rejects MOV QuickTime container with INVALID_VIDEO_FILE', () => {
+      const MOV_BUFFER = Buffer.concat([
+        Buffer.from([0x00, 0x00, 0x00, 0x14]),
+        Buffer.from('ftypqt  '),
+        Buffer.from([0x00, 0x00, 0x02, 0x00]),
+      ]);
+      expect(() => validateVideoContent(MOV_BUFFER)).toThrow(
+        expect.objectContaining({
+          code: 'INVALID_VIDEO_FILE',
+        })
+      );
+    });
+
+    it('rejects HEIC/HEIF image container with INVALID_VIDEO_FILE', () => {
+      const HEIC_BUFFER = Buffer.concat([
+        Buffer.from([0x00, 0x00, 0x00, 0x18]),
+        Buffer.from('ftypheic'),
+        Buffer.from([0x00, 0x00, 0x00, 0x00]),
+        Buffer.from('mif1heic'),
+      ]);
+      expect(() => validateVideoContent(HEIC_BUFFER)).toThrow(
+        expect.objectContaining({
+          code: 'INVALID_VIDEO_FILE',
+        })
+      );
+    });
+
+    it('rejects 3GP container with INVALID_VIDEO_FILE', () => {
+      const THREEGP_BUFFER = Buffer.concat([
+        Buffer.from([0x00, 0x00, 0x00, 0x14]),
+        Buffer.from('ftyp3gp4'),
+        Buffer.from([0x00, 0x00, 0x02, 0x00]),
+      ]);
+      expect(() => validateVideoContent(THREEGP_BUFFER)).toThrow(
+        expect.objectContaining({
+          code: 'INVALID_VIDEO_FILE',
+        })
+      );
+    });
+
+    it('rejects arbitrary unknown ftyp container with INVALID_VIDEO_FILE', () => {
+      const UNKNOWN_FTYP = Buffer.concat([
+        Buffer.from([0x00, 0x00, 0x00, 0x14]),
+        Buffer.from('ftypzzzz'),
+        Buffer.from([0x00, 0x00, 0x00, 0x00]),
+      ]);
+      expect(() => validateVideoContent(UNKNOWN_FTYP)).toThrow(
+        expect.objectContaining({
+          code: 'INVALID_VIDEO_FILE',
+        })
+      );
+    });
+
+    it('accepts MP4 with valid compatible brand even if major brand is generic', () => {
+      const MP4_COMPAT_BUFFER = Buffer.concat([
+        Buffer.from([0x00, 0x00, 0x00, 0x18]),
+        Buffer.from('ftypmp42'),
+        Buffer.from([0x00, 0x00, 0x00, 0x00]),
+        Buffer.from('isommp42'),
+      ]);
+      const res = validateVideoContent(MP4_COMPAT_BUFFER);
+      expect(res.mimeType).toBe('video/mp4');
+      expect(res.extension).toBe('.mp4');
+    });
+
     it('rejects empty video buffer', () => {
       expect(() => validateVideoContent(Buffer.alloc(0))).toThrow(/File is empty/);
     });

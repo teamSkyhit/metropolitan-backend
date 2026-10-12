@@ -63,9 +63,10 @@ export const mediaRepository = {
     return { items, total };
   },
 
-  create(data: CreateMediaData): Promise<MediaRecord> {
+  create(data: CreateMediaData, tx?: Prisma.TransactionClient): Promise<MediaRecord> {
+    const db = tx ?? prisma;
     const audit = createdBy(data.actorId ?? data.uploadedById);
-    return prisma.media.create({
+    return db.media.create({
       data: {
         fileName: data.fileName,
         storageKey: data.storageKey,
@@ -79,8 +80,9 @@ export const mediaRepository = {
     });
   },
 
-  softDelete(id: string, actorId: string | null = null): Promise<MediaRecord> {
-    return prisma.media.update({
+  softDelete(id: string, actorId: string | null = null, tx?: Prisma.TransactionClient): Promise<MediaRecord> {
+    const db = tx ?? prisma;
+    return db.media.update({
       where: { id },
       data: softDeleteData(actorId),
     });

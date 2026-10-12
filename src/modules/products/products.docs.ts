@@ -25,6 +25,15 @@ import {
   updateProductDocumentBodySchema,
   updateProductSpecificationsBodySchema,
   updateProductVideoBodySchema,
+  createProductFeatureBodySchema,
+  updateProductFeatureBodySchema,
+  reorderProductFeaturesBodySchema,
+  productFeatureParamsSchema,
+  createProductKeyBenefitBodySchema,
+  updateProductKeyBenefitBodySchema,
+  reorderProductKeyBenefitsBodySchema,
+  productKeyBenefitParamsSchema,
+  setRelatedProductsBodySchema,
 } from './products.schema';
 
 export function registerProductsDocs(registry: OpenAPIRegistry): void {
@@ -418,6 +427,138 @@ export function registerProductsDocs(registry: OpenAPIRegistry): void {
     request: { params: idParamsSchema, body: json(updateProductSpecificationsBodySchema) },
     responses: {
       200: jsonResponse('Specifications updated', successBody(productSchema)),
+      ...errorResponses(400, 401, 403, 404),
+    },
+  });
+
+  // ── Product Features ──────────────────────────────────────────────────────
+
+  registry.registerPath({
+    method: 'post',
+    path: '/products/{id}/features',
+    tags: adminTags,
+    security,
+    summary: 'Add product feature',
+    description: 'Requires `products:update`. Adds an ordered feature item (icon, title, description).',
+    request: { params: idParamsSchema, body: json(createProductFeatureBodySchema) },
+    responses: {
+      201: jsonResponse('Feature added', successBody(productSchema)),
+      ...errorResponses(400, 401, 403, 404),
+    },
+  });
+
+  registry.registerPath({
+    method: 'patch',
+    path: '/products/{id}/features/reorder',
+    tags: adminTags,
+    security,
+    summary: 'Reorder product features',
+    description: 'Requires `products:update`. Reorders product features by ID sequence.',
+    request: { params: idParamsSchema, body: json(reorderProductFeaturesBodySchema) },
+    responses: {
+      200: jsonResponse('Features reordered', successBody(productSchema)),
+      ...errorResponses(400, 401, 403, 404),
+    },
+  });
+
+  registry.registerPath({
+    method: 'patch',
+    path: '/products/{id}/features/{featureId}',
+    tags: adminTags,
+    security,
+    summary: 'Update product feature',
+    description: 'Requires `products:update`. Updates an existing feature item.',
+    request: { params: productFeatureParamsSchema, body: json(updateProductFeatureBodySchema) },
+    responses: {
+      200: jsonResponse('Feature updated', successBody(productSchema)),
+      ...errorResponses(400, 401, 403, 404),
+    },
+  });
+
+  registry.registerPath({
+    method: 'delete',
+    path: '/products/{id}/features/{featureId}',
+    tags: adminTags,
+    security,
+    summary: 'Delete product feature',
+    description: 'Requires `products:update`. Removes a feature item.',
+    request: { params: productFeatureParamsSchema },
+    responses: {
+      200: jsonResponse('Feature removed', successBody(productSchema)),
+      ...errorResponses(400, 401, 403, 404),
+    },
+  });
+
+  // ── Product Key Benefits ──────────────────────────────────────────────────
+
+  registry.registerPath({
+    method: 'post',
+    path: '/products/{id}/key-benefits',
+    tags: adminTags,
+    security,
+    summary: 'Add product key benefit',
+    description: 'Requires `products:update`. Adds an ordered key benefit (icon, title, description).',
+    request: { params: idParamsSchema, body: json(createProductKeyBenefitBodySchema) },
+    responses: {
+      201: jsonResponse('Key benefit added', successBody(productSchema)),
+      ...errorResponses(400, 401, 403, 404),
+    },
+  });
+
+  registry.registerPath({
+    method: 'patch',
+    path: '/products/{id}/key-benefits/reorder',
+    tags: adminTags,
+    security,
+    summary: 'Reorder product key benefits',
+    description: 'Requires `products:update`. Reorders key benefits by ID sequence.',
+    request: { params: idParamsSchema, body: json(reorderProductKeyBenefitsBodySchema) },
+    responses: {
+      200: jsonResponse('Key benefits reordered', successBody(productSchema)),
+      ...errorResponses(400, 401, 403, 404),
+    },
+  });
+
+  registry.registerPath({
+    method: 'patch',
+    path: '/products/{id}/key-benefits/{benefitId}',
+    tags: adminTags,
+    security,
+    summary: 'Update product key benefit',
+    description: 'Requires `products:update`. Updates an existing key benefit item.',
+    request: { params: productKeyBenefitParamsSchema, body: json(updateProductKeyBenefitBodySchema) },
+    responses: {
+      200: jsonResponse('Key benefit updated', successBody(productSchema)),
+      ...errorResponses(400, 401, 403, 404),
+    },
+  });
+
+  registry.registerPath({
+    method: 'delete',
+    path: '/products/{id}/key-benefits/{benefitId}',
+    tags: adminTags,
+    security,
+    summary: 'Delete product key benefit',
+    description: 'Requires `products:update`. Removes a key benefit item.',
+    request: { params: productKeyBenefitParamsSchema },
+    responses: {
+      200: jsonResponse('Key benefit removed', successBody(productSchema)),
+      ...errorResponses(400, 401, 403, 404),
+    },
+  });
+
+  // ── Product Related Products ──────────────────────────────────────────────
+
+  registry.registerPath({
+    method: 'put',
+    path: '/products/{id}/related-products',
+    tags: adminTags,
+    security,
+    summary: 'Set related products',
+    description: 'Requires `products:update`. Sets the list of related product IDs in order.',
+    request: { params: idParamsSchema, body: json(setRelatedProductsBodySchema) },
+    responses: {
+      200: jsonResponse('Related products updated', successBody(productSchema)),
       ...errorResponses(400, 401, 403, 404),
     },
   });
