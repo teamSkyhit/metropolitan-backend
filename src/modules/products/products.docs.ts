@@ -12,11 +12,28 @@ import {
   createProductBodySchema,
   listProductsQuerySchema,
   listPublicProductsQuerySchema,
+  productDocumentParamsSchema,
+  productGalleryParamsSchema,
   productSchema,
+  productVideoParamsSchema,
   publicProductSchema,
   publicProductSlugParamsSchema,
+  reorderProductDocumentsBodySchema,
+  reorderProductGalleryBodySchema,
+  reorderProductVideosBodySchema,
   updateProductBodySchema,
+  updateProductDocumentBodySchema,
   updateProductSpecificationsBodySchema,
+  updateProductVideoBodySchema,
+  createProductFeatureBodySchema,
+  updateProductFeatureBodySchema,
+  reorderProductFeaturesBodySchema,
+  productFeatureParamsSchema,
+  createProductKeyBenefitBodySchema,
+  updateProductKeyBenefitBodySchema,
+  reorderProductKeyBenefitsBodySchema,
+  productKeyBenefitParamsSchema,
+  setRelatedProductsBodySchema,
 } from './products.schema';
 
 export function registerProductsDocs(registry: OpenAPIRegistry): void {
@@ -29,6 +46,44 @@ export function registerProductsDocs(registry: OpenAPIRegistry): void {
       'multipart/form-data': {
         schema: z.object({
           image: z.string().meta({ format: 'binary', description: 'PNG, JPEG, or WebP image (max 5 MB)' }),
+        }),
+      },
+    },
+  });
+  const multipartGallery = () => ({
+    content: {
+      'multipart/form-data': {
+        schema: z.object({
+          images: z.string().meta({
+            format: 'binary',
+            description: 'Product gallery image(s) (PNG, JPEG, WebP, max 5 MB each, max 5 total)',
+          }),
+        }),
+      },
+    },
+  });
+  const multipartVideos = () => ({
+    content: {
+      'multipart/form-data': {
+        schema: z.object({
+          videos: z.string().meta({
+            format: 'binary',
+            description: 'Product video(s) (MP4 or WebM, max 100 MB each, max 2 total)',
+          }),
+          title: z.string().optional().meta({ description: 'Optional video display title' }),
+        }),
+      },
+    },
+  });
+  const multipartDocuments = () => ({
+    content: {
+      'multipart/form-data': {
+        schema: z.object({
+          documents: z.string().meta({
+            format: 'binary',
+            description: 'PDF document(s) (application/pdf only, max 10 MB each, max 3 total)',
+          }),
+          title: z.string().optional().meta({ description: 'Optional document display title' }),
         }),
       },
     },
@@ -56,7 +111,7 @@ export function registerProductsDocs(registry: OpenAPIRegistry): void {
     tags: publicTags,
     summary: 'Get public product by slug, SKU, or ID',
     description:
-      'Public website endpoint. Returns product details for product pages. Only returns published products with active brand and category. Excludes internal audit fields and CRM-only data.',
+      'Public website endpoint. Returns product details for product pages including gallery images and PDF documents. Only returns published products with active brand and category. Excludes internal audit fields and CRM-only data.',
     request: { params: publicProductSlugParamsSchema },
     responses: {
       200: jsonResponse('Public product detail', successBody(publicProductSchema)),
@@ -101,7 +156,7 @@ export function registerProductsDocs(registry: OpenAPIRegistry): void {
     tags: adminTags,
     security,
     summary: 'Get product by ID',
-    description: 'Requires `products:read`.',
+    description: 'Requires `products:read`. Includes full gallery images and PDF documents.',
     request: { params: idParamsSchema },
     responses: {
       200: jsonResponse('Product detail', successBody(productSchema)),
@@ -180,6 +235,187 @@ export function registerProductsDocs(registry: OpenAPIRegistry): void {
     },
   });
 
+  // ── Product Gallery Endpoints ──────────────────────────────────────────────
+
+  registry.registerPath({
+    method: 'post',
+    path: '/products/{id}/gallery',
+    tags: adminTags,
+    security,
+    summary: 'Upload product gallery image(s)',
+    description:
+      'Requires `products:update`. Accepts multipart/form-data with field `images`. Max 5 active images per product, max 5 MB each. PNG, JPEG, or WebP.',
+    request: { params: idParamsSchema, body: multipartGallery() },
+    responses: {
+      200: jsonResponse('Gallery image uploaded', successBody(productSchema)),
+      ...errorResponses(400, 401, 403, 404, 409),
+    },
+  });
+
+  registry.registerPath({
+    method: 'patch',
+    path: '/products/{id}/gallery/reorder',
+    tags: adminTags,
+    security,
+    summary: 'Reorder product gallery images',
+    description: 'Requires `products:update`. Reorders active gallery images according to given ID order.',
+    request: { params: idParamsSchema, body: json(reorderProductGalleryBodySchema) },
+    responses: {
+      200: jsonResponse('Gallery reordered', successBody(productSchema)),
+      ...errorResponses(400, 401, 403, 404),
+    },
+  });
+
+  registry.registerPath({
+    method: 'patch',
+    path: '/products/{id}/gallery/{galleryImageId}/primary',
+    tags: adminTags,
+    security,
+    summary: 'Set primary gallery image',
+    description:
+      'Requires `products:update`. Designates selected gallery image as primary and syncs product.imageUrl.',
+    request: { params: productGalleryParamsSchema },
+    responses: {
+      200: jsonResponse('Primary image updated', successBody(productSchema)),
+      ...errorResponses(400, 401, 403, 404),
+    },
+  });
+
+  registry.registerPath({
+    method: 'delete',
+    path: '/products/{id}/gallery/{galleryImageId}',
+    tags: adminTags,
+    security,
+    summary: 'Delete gallery image',
+    description:
+      'Requires `products:update`. Removes image from gallery. If deleted image was primary, automatically falls back to next available image.',
+    request: { params: productGalleryParamsSchema },
+    responses: {
+      200: jsonResponse('Gallery image removed', successBody(productSchema)),
+      ...errorResponses(400, 401, 403, 404),
+    },
+  });
+
+  // ── Product Videos Endpoints ───────────────────────────────────────────────
+
+  registry.registerPath({
+    method: 'post',
+    path: '/products/{id}/videos',
+    tags: adminTags,
+    security,
+    summary: 'Upload product video(s)',
+    description:
+      'Requires `products:update`. Accepts multipart/form-data with canonical field `videos`. Max 2 active videos per product, max 100 MB each. Allowed formats: MP4 (video/mp4), WebM (video/webm).',
+    request: { params: idParamsSchema, body: multipartVideos() },
+    responses: {
+      200: jsonResponse('Video uploaded', successBody(productSchema)),
+      ...errorResponses(400, 401, 403, 404, 409),
+    },
+  });
+
+  registry.registerPath({
+    method: 'patch',
+    path: '/products/{id}/videos/reorder',
+    tags: adminTags,
+    security,
+    summary: 'Reorder product videos',
+    description: 'Requires `products:update`. Reorders active videos according to given ID order.',
+    request: { params: idParamsSchema, body: json(reorderProductVideosBodySchema) },
+    responses: {
+      200: jsonResponse('Videos reordered', successBody(productSchema)),
+      ...errorResponses(400, 401, 403, 404),
+    },
+  });
+
+  registry.registerPath({
+    method: 'patch',
+    path: '/products/{id}/videos/{videoId}',
+    tags: adminTags,
+    security,
+    summary: 'Update product video title',
+    description: 'Requires `products:update`. Updates the optional title of the video.',
+    request: { params: productVideoParamsSchema, body: json(updateProductVideoBodySchema) },
+    responses: {
+      200: jsonResponse('Video updated', successBody(productSchema)),
+      ...errorResponses(400, 401, 403, 404),
+    },
+  });
+
+  registry.registerPath({
+    method: 'delete',
+    path: '/products/{id}/videos/{videoId}',
+    tags: adminTags,
+    security,
+    summary: 'Delete product video',
+    description: 'Requires `products:update`. Removes video reference.',
+    request: { params: productVideoParamsSchema },
+    responses: {
+      200: jsonResponse('Video removed', successBody(productSchema)),
+      ...errorResponses(400, 401, 403, 404),
+    },
+  });
+
+  // ── Product Documents (PDFs) Endpoints ─────────────────────────────────────
+
+  registry.registerPath({
+    method: 'post',
+    path: '/products/{id}/documents',
+    tags: adminTags,
+    security,
+    summary: 'Upload product PDF document(s)',
+    description:
+      'Requires `products:update`. Accepts multipart/form-data with canonical field `documents`. Max 3 active PDFs per product, max 10 MB each. application/pdf only.',
+    request: { params: idParamsSchema, body: multipartDocuments() },
+    responses: {
+      200: jsonResponse('Document uploaded', successBody(productSchema)),
+      ...errorResponses(400, 401, 403, 404, 409),
+    },
+  });
+
+  registry.registerPath({
+    method: 'patch',
+    path: '/products/{id}/documents/reorder',
+    tags: adminTags,
+    security,
+    summary: 'Reorder product documents',
+    description: 'Requires `products:update`. Reorders active documents according to given ID order.',
+    request: { params: idParamsSchema, body: json(reorderProductDocumentsBodySchema) },
+    responses: {
+      200: jsonResponse('Documents reordered', successBody(productSchema)),
+      ...errorResponses(400, 401, 403, 404),
+    },
+  });
+
+  registry.registerPath({
+    method: 'patch',
+    path: '/products/{id}/documents/{documentId}',
+    tags: adminTags,
+    security,
+    summary: 'Update product document title',
+    description: 'Requires `products:update`. Updates the title of the document.',
+    request: { params: productDocumentParamsSchema, body: json(updateProductDocumentBodySchema) },
+    responses: {
+      200: jsonResponse('Document updated', successBody(productSchema)),
+      ...errorResponses(400, 401, 403, 404),
+    },
+  });
+
+  registry.registerPath({
+    method: 'delete',
+    path: '/products/{id}/documents/{documentId}',
+    tags: adminTags,
+    security,
+    summary: 'Delete product document',
+    description: 'Requires `products:update`. Removes PDF document reference.',
+    request: { params: productDocumentParamsSchema },
+    responses: {
+      200: jsonResponse('Document removed', successBody(productSchema)),
+      ...errorResponses(400, 401, 403, 404),
+    },
+  });
+
+  // ── Product Specifications ────────────────────────────────────────────────
+
   registry.registerPath({
     method: 'put',
     path: '/products/{id}/specifications',
@@ -191,6 +427,138 @@ export function registerProductsDocs(registry: OpenAPIRegistry): void {
     request: { params: idParamsSchema, body: json(updateProductSpecificationsBodySchema) },
     responses: {
       200: jsonResponse('Specifications updated', successBody(productSchema)),
+      ...errorResponses(400, 401, 403, 404),
+    },
+  });
+
+  // ── Product Features ──────────────────────────────────────────────────────
+
+  registry.registerPath({
+    method: 'post',
+    path: '/products/{id}/features',
+    tags: adminTags,
+    security,
+    summary: 'Add product feature',
+    description: 'Requires `products:update`. Adds an ordered feature item (icon, title, description).',
+    request: { params: idParamsSchema, body: json(createProductFeatureBodySchema) },
+    responses: {
+      201: jsonResponse('Feature added', successBody(productSchema)),
+      ...errorResponses(400, 401, 403, 404),
+    },
+  });
+
+  registry.registerPath({
+    method: 'patch',
+    path: '/products/{id}/features/reorder',
+    tags: adminTags,
+    security,
+    summary: 'Reorder product features',
+    description: 'Requires `products:update`. Reorders product features by ID sequence.',
+    request: { params: idParamsSchema, body: json(reorderProductFeaturesBodySchema) },
+    responses: {
+      200: jsonResponse('Features reordered', successBody(productSchema)),
+      ...errorResponses(400, 401, 403, 404),
+    },
+  });
+
+  registry.registerPath({
+    method: 'patch',
+    path: '/products/{id}/features/{featureId}',
+    tags: adminTags,
+    security,
+    summary: 'Update product feature',
+    description: 'Requires `products:update`. Updates an existing feature item.',
+    request: { params: productFeatureParamsSchema, body: json(updateProductFeatureBodySchema) },
+    responses: {
+      200: jsonResponse('Feature updated', successBody(productSchema)),
+      ...errorResponses(400, 401, 403, 404),
+    },
+  });
+
+  registry.registerPath({
+    method: 'delete',
+    path: '/products/{id}/features/{featureId}',
+    tags: adminTags,
+    security,
+    summary: 'Delete product feature',
+    description: 'Requires `products:update`. Removes a feature item.',
+    request: { params: productFeatureParamsSchema },
+    responses: {
+      200: jsonResponse('Feature removed', successBody(productSchema)),
+      ...errorResponses(400, 401, 403, 404),
+    },
+  });
+
+  // ── Product Key Benefits ──────────────────────────────────────────────────
+
+  registry.registerPath({
+    method: 'post',
+    path: '/products/{id}/key-benefits',
+    tags: adminTags,
+    security,
+    summary: 'Add product key benefit',
+    description: 'Requires `products:update`. Adds an ordered key benefit (icon, title, description).',
+    request: { params: idParamsSchema, body: json(createProductKeyBenefitBodySchema) },
+    responses: {
+      201: jsonResponse('Key benefit added', successBody(productSchema)),
+      ...errorResponses(400, 401, 403, 404),
+    },
+  });
+
+  registry.registerPath({
+    method: 'patch',
+    path: '/products/{id}/key-benefits/reorder',
+    tags: adminTags,
+    security,
+    summary: 'Reorder product key benefits',
+    description: 'Requires `products:update`. Reorders key benefits by ID sequence.',
+    request: { params: idParamsSchema, body: json(reorderProductKeyBenefitsBodySchema) },
+    responses: {
+      200: jsonResponse('Key benefits reordered', successBody(productSchema)),
+      ...errorResponses(400, 401, 403, 404),
+    },
+  });
+
+  registry.registerPath({
+    method: 'patch',
+    path: '/products/{id}/key-benefits/{benefitId}',
+    tags: adminTags,
+    security,
+    summary: 'Update product key benefit',
+    description: 'Requires `products:update`. Updates an existing key benefit item.',
+    request: { params: productKeyBenefitParamsSchema, body: json(updateProductKeyBenefitBodySchema) },
+    responses: {
+      200: jsonResponse('Key benefit updated', successBody(productSchema)),
+      ...errorResponses(400, 401, 403, 404),
+    },
+  });
+
+  registry.registerPath({
+    method: 'delete',
+    path: '/products/{id}/key-benefits/{benefitId}',
+    tags: adminTags,
+    security,
+    summary: 'Delete product key benefit',
+    description: 'Requires `products:update`. Removes a key benefit item.',
+    request: { params: productKeyBenefitParamsSchema },
+    responses: {
+      200: jsonResponse('Key benefit removed', successBody(productSchema)),
+      ...errorResponses(400, 401, 403, 404),
+    },
+  });
+
+  // ── Product Related Products ──────────────────────────────────────────────
+
+  registry.registerPath({
+    method: 'put',
+    path: '/products/{id}/related-products',
+    tags: adminTags,
+    security,
+    summary: 'Set related products',
+    description: 'Requires `products:update`. Sets the list of related product IDs in order.',
+    request: { params: idParamsSchema, body: json(setRelatedProductsBodySchema) },
+    responses: {
+      200: jsonResponse('Related products updated', successBody(productSchema)),
       ...errorResponses(400, 401, 403, 404),
     },
   });

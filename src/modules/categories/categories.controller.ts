@@ -45,6 +45,14 @@ export const categoriesController = {
     sendSuccess(res, await categoriesService.restore(req.params.id, requireAuth(req).userId));
   }),
 
+  uploadImage: handle({ params: idParamsSchema }, async (req, res) => {
+    sendSuccess(res, await categoriesService.uploadImage(req.params.id, req.file!, requireAuth(req).userId));
+  }),
+
+  removeImage: handle({ params: idParamsSchema }, async (req, res) => {
+    sendSuccess(res, await categoriesService.removeImage(req.params.id, requireAuth(req).userId));
+  }),
+
   uploadBanner: handle({ params: idParamsSchema }, async (req, res) => {
     sendSuccess(res, await categoriesService.uploadBanner(req.params.id, req.file!, requireAuth(req).userId));
   }),

@@ -2,7 +2,9 @@ import { randomUUID } from 'node:crypto';
 import { translatePrismaUniqueError } from '../../shared/database';
 import { AppError } from '../../shared/errors';
 import { buildPaginationMeta, type Paginated } from '../../shared/http';
+import { logger } from '../../shared/logger';
 import { storageService, UPLOAD_LIMITS, validateFileSize, validateImageContent } from '../../shared/storage';
+import { mediaService } from '../media';
 import { productReferenceService } from '../products';
 import { categoriesRepository, type CategoryRecord } from './categories.repository';
 import {
@@ -35,7 +37,10 @@ export function toCategoryDto(record: CategoryRecord): CategoryDto {
     id: record.id,
     name: record.name,
     slug: record.slug,
-    bannerUrl: record.bannerUrl,
+    imageUrl: record.imageUrl ?? null,
+    imageMediaId: record.imageMediaId ?? null,
+    bannerUrl: record.bannerUrl ?? null,
+    bannerMediaId: record.bannerMediaId ?? null,
     description: record.description,
     isActive: record.isActive,
     sortOrder: record.sortOrder,
@@ -51,7 +56,8 @@ export function toPublicCategoryDto(record: CategoryRecord): PublicCategoryDto {
     id: record.id,
     name: record.name,
     slug: record.slug,
-    bannerUrl: record.bannerUrl,
+    imageUrl: record.imageUrl ?? null,
+    bannerUrl: record.bannerUrl ?? null,
     description: record.description,
     parentId: record.parentId,
   };
@@ -114,6 +120,34 @@ async function assertValidParent(
       }
       const ancestor = await categoriesRepository.findByIdIncludingDeleted(currentParentId);
       currentParentId = ancestor?.parentId ?? null;
+    }
+  }
+}
+
+async function cleanupOldCategoryMedia(
+  categoryId: string,
+  entityType: 'image' | 'banner',
+  mediaId: string | null | undefined,
+  url: string | null | undefined,
+  actorId: string
+): Promise<void> {
+  if (mediaId) {
+    try {
+      await mediaService.deleteIfUnreferenced(mediaId, actorId);
+    } catch (err) {
+      logger.warn(
+        { err, categoryId, entityType, mediaId },
+        `Failed to clean up unreferenced category ${entityType} media`
+      );
+    }
+  } else if (url) {
+    try {
+      await storageService.delete(url);
+    } catch (err) {
+      logger.warn(
+        { err, categoryId, entityType, url },
+        `Failed to clean up legacy category ${entityType} storage`
+      );
     }
   }
 }
@@ -240,14 +274,80 @@ export const categoriesService = {
     return toCategoryDto(restored);
   },
 
+  async uploadImage(id: string, file: Express.Multer.File, actorId: string): Promise<CategoryDto> {
+    const category = await categoriesRepository.findById(id);
+    if (!category) throw AppError.notFound('Category');
+
+    validateFileSize(file.size, UPLOAD_LIMITS.CATEGORY_IMAGE_MAX_BYTES, 'Category image');
+    const validated = validateImageContent(file.buffer);
+
+    const oldImageUrl = category.imageUrl;
+    const oldImageMediaId = category.imageMediaId;
+
+    const stored = await storageService.upload(
+      {
+        filename: `${randomUUID()}${validated.extension}`,
+        buffer: file.buffer,
+        mimeType: validated.mimeType,
+        size: file.size,
+      },
+      'categories/images'
+    );
+
+    let updated: CategoryRecord;
+    try {
+      updated = await categoriesRepository.withTransaction(async (tx) => {
+        const mediaRecord = await mediaService.createManagedMedia(
+          {
+            fileName: file.originalname || stored.filename,
+            storageKey: stored.path,
+            publicUrl: stored.url,
+            mimeType: validated.mimeType,
+            fileSize: file.size,
+            uploadedById: actorId,
+            actorId,
+          },
+          tx
+        );
+
+        return categoriesRepository.updateImage(id, stored.url, mediaRecord.id, actorId, tx);
+      });
+    } catch (err) {
+      await storageService.delete(stored.path).catch(() => {});
+      throw err;
+    }
+
+    await cleanupOldCategoryMedia(id, 'image', oldImageMediaId, oldImageUrl, actorId);
+
+    return toCategoryDto(updated);
+  },
+
+  async removeImage(id: string, actorId: string): Promise<CategoryDto> {
+    const category = await categoriesRepository.findById(id);
+    if (!category) throw AppError.notFound('Category');
+    if (!category.imageUrl) {
+      throw AppError.notFound('Category image does not exist', CategoriesErrorCode.IMAGE_NOT_FOUND);
+    }
+
+    const oldImageUrl = category.imageUrl;
+    const oldImageMediaId = category.imageMediaId;
+
+    const updated = await categoriesRepository.updateImage(id, null, null, actorId);
+
+    await cleanupOldCategoryMedia(id, 'image', oldImageMediaId, oldImageUrl, actorId);
+
+    return toCategoryDto(updated);
+  },
+
   async uploadBanner(id: string, file: Express.Multer.File, actorId: string): Promise<CategoryDto> {
     const category = await categoriesRepository.findById(id);
     if (!category) throw AppError.notFound('Category');
 
-    validateFileSize(file.size, UPLOAD_LIMITS.BANNER_MAX_BYTES, 'Banner');
+    validateFileSize(file.size, UPLOAD_LIMITS.CATEGORY_BANNER_MAX_BYTES, 'Banner');
     const validated = validateImageContent(file.buffer);
 
     const oldBannerUrl = category.bannerUrl;
+    const oldBannerMediaId = category.bannerMediaId;
 
     const stored = await storageService.upload(
       {
@@ -259,11 +359,30 @@ export const categoriesService = {
       'categories/banners'
     );
 
-    const updated = await categoriesRepository.updateBanner(id, stored.url, actorId);
+    let updated: CategoryRecord;
+    try {
+      updated = await categoriesRepository.withTransaction(async (tx) => {
+        const mediaRecord = await mediaService.createManagedMedia(
+          {
+            fileName: file.originalname || stored.filename,
+            storageKey: stored.path,
+            publicUrl: stored.url,
+            mimeType: validated.mimeType,
+            fileSize: file.size,
+            uploadedById: actorId,
+            actorId,
+          },
+          tx
+        );
 
-    if (oldBannerUrl && !oldBannerUrl.includes('/media/')) {
-      await storageService.delete(oldBannerUrl).catch(() => {});
+        return categoriesRepository.updateBanner(id, stored.url, mediaRecord.id, actorId, tx);
+      });
+    } catch (err) {
+      await storageService.delete(stored.path).catch(() => {});
+      throw err;
     }
+
+    await cleanupOldCategoryMedia(id, 'banner', oldBannerMediaId, oldBannerUrl, actorId);
 
     return toCategoryDto(updated);
   },
@@ -271,18 +390,21 @@ export const categoriesService = {
   async removeBanner(id: string, actorId: string): Promise<CategoryDto> {
     const category = await categoriesRepository.findById(id);
     if (!category) throw AppError.notFound('Category');
+    if (!category.bannerUrl) {
+      throw AppError.notFound('Category banner does not exist', CategoriesErrorCode.BANNER_NOT_FOUND);
+    }
 
     const oldBannerUrl = category.bannerUrl;
-    const updated = await categoriesRepository.updateBanner(id, null, actorId);
+    const oldBannerMediaId = category.bannerMediaId;
 
-    if (oldBannerUrl && !oldBannerUrl.includes('/media/')) {
-      await storageService.delete(oldBannerUrl).catch(() => {});
-    }
+    const updated = await categoriesRepository.updateBanner(id, null, null, actorId);
+
+    await cleanupOldCategoryMedia(id, 'banner', oldBannerMediaId, oldBannerUrl, actorId);
 
     return toCategoryDto(updated);
   },
 
-  async isMediaUrlReferenced(url: string): Promise<boolean> {
-    return categoriesRepository.isMediaUrlReferenced(url);
+  async isMediaUrlReferenced(url: string, id?: string): Promise<boolean> {
+    return categoriesRepository.isMediaUrlReferenced(url, id);
   },
 };

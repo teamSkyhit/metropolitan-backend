@@ -1,6 +1,7 @@
 export interface StorageFile {
   filename: string;
-  buffer: Buffer;
+  buffer?: Buffer;
+  path?: string;
   mimeType: string;
   size: number;
 }

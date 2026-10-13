@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import fs from 'node:fs';
 import path from 'node:path';
 import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { config } from '../../config/env';
@@ -193,11 +194,16 @@ export class S3StorageService implements IStorageService {
     const filename = `${randomUUID()}${ext}`;
     const key = safeFolder ? `${safeFolder}/${filename}` : filename;
 
+    const body = file.path ? fs.createReadStream(file.path) : file.buffer;
+    if (!body) {
+      throw new Error('StorageFile must have either a buffer or a path');
+    }
+
     await this.client.send(
       new PutObjectCommand({
         Bucket: this.bucket,
         Key: key,
-        Body: file.buffer,
+        Body: body,
         ContentType: file.mimeType,
         ContentLength: file.size,
       })

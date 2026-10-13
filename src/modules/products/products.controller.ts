@@ -9,10 +9,29 @@ import {
 import { requireAuth } from '../../shared/security/auth-context';
 import {
   createProductBodySchema,
+  createProductFeatureBodySchema,
+  createProductKeyBenefitBodySchema,
   listProductsQuerySchema,
   listPublicProductsQuerySchema,
+  productDocumentParamsSchema,
+  productFeatureParamsSchema,
+  productGalleryParamsSchema,
+  productKeyBenefitParamsSchema,
+  productVideoParamsSchema,
   publicProductSlugParamsSchema,
+  reorderProductDocumentsBodySchema,
+  reorderProductFeaturesBodySchema,
+  reorderProductGalleryBodySchema,
+  reorderProductKeyBenefitsBodySchema,
+  reorderProductVideosBodySchema,
+  setRelatedProductsBodySchema,
   updateProductBodySchema,
+  updateProductDocumentBodySchema,
+  updateProductFeatureBodySchema,
+  updateProductKeyBenefitBodySchema,
+  updateProductVideoBodySchema,
+  uploadProductDocumentBodySchema,
+  uploadProductVideoBodySchema,
   updateProductSpecificationsBodySchema,
 } from './products.schema';
 import { productsService } from './products.service';
@@ -62,6 +81,137 @@ export const productsController = {
     sendSuccess(res, await productsService.removeImage(req.params.id, requireAuth(req).userId));
   }),
 
+  uploadGallery: handle({ params: idParamsSchema }, async (req, res) => {
+    const files =
+      (req as unknown as { uploadedFiles?: Express.Multer.File[] }).uploadedFiles ||
+      (Array.isArray(req.files) ? req.files : []) ||
+      (req.file ? [req.file] : []);
+    sendSuccess(res, await productsService.uploadGallery(req.params.id, files, requireAuth(req).userId));
+  }),
+
+  removeGalleryImage: handle({ params: productGalleryParamsSchema }, async (req, res) => {
+    sendSuccess(
+      res,
+      await productsService.removeGalleryImage(
+        req.params.id,
+        req.params.galleryImageId,
+        requireAuth(req).userId
+      )
+    );
+  }),
+
+  setPrimaryGalleryImage: handle({ params: productGalleryParamsSchema }, async (req, res) => {
+    sendSuccess(
+      res,
+      await productsService.setPrimaryGalleryImage(
+        req.params.id,
+        req.params.galleryImageId,
+        requireAuth(req).userId
+      )
+    );
+  }),
+
+  reorderGallery: handle(
+    { params: idParamsSchema, body: reorderProductGalleryBodySchema },
+    async (req, res) => {
+      sendSuccess(
+        res,
+        await productsService.reorderGallery(req.params.id, req.body.imageIds, requireAuth(req).userId)
+      );
+    }
+  ),
+
+  uploadDocuments: handle(
+    { params: idParamsSchema, body: uploadProductDocumentBodySchema },
+    async (req, res) => {
+      const files =
+        (req as unknown as { uploadedFiles?: Express.Multer.File[] }).uploadedFiles ||
+        (Array.isArray(req.files) ? req.files : []) ||
+        (req.file ? [req.file] : []);
+      const title = req.body?.title;
+      sendSuccess(
+        res,
+        await productsService.uploadDocuments(req.params.id, files, title, requireAuth(req).userId)
+      );
+    }
+  ),
+
+  removeDocument: handle({ params: productDocumentParamsSchema }, async (req, res) => {
+    sendSuccess(
+      res,
+      await productsService.removeDocument(req.params.id, req.params.documentId, requireAuth(req).userId)
+    );
+  }),
+
+  updateDocument: handle(
+    { params: productDocumentParamsSchema, body: updateProductDocumentBodySchema },
+    async (req, res) => {
+      sendSuccess(
+        res,
+        await productsService.updateDocument(
+          req.params.id,
+          req.params.documentId,
+          req.body.title,
+          requireAuth(req).userId
+        )
+      );
+    }
+  ),
+
+  reorderDocuments: handle(
+    { params: idParamsSchema, body: reorderProductDocumentsBodySchema },
+    async (req, res) => {
+      sendSuccess(
+        res,
+        await productsService.reorderDocuments(req.params.id, req.body.documentIds, requireAuth(req).userId)
+      );
+    }
+  ),
+
+  uploadVideos: handle({ params: idParamsSchema, body: uploadProductVideoBodySchema }, async (req, res) => {
+    const files =
+      (req as unknown as { uploadedFiles?: Express.Multer.File[] }).uploadedFiles ||
+      (Array.isArray(req.files) ? req.files : []) ||
+      (req.file ? [req.file] : []);
+    const title = req.body?.title;
+    sendSuccess(
+      res,
+      await productsService.uploadVideos(req.params.id, files, title, requireAuth(req).userId)
+    );
+  }),
+
+  removeVideo: handle({ params: productVideoParamsSchema }, async (req, res) => {
+    sendSuccess(
+      res,
+      await productsService.removeVideo(req.params.id, req.params.videoId, requireAuth(req).userId)
+    );
+  }),
+
+  updateVideoTitle: handle(
+    { params: productVideoParamsSchema, body: updateProductVideoBodySchema },
+    async (req, res) => {
+      sendSuccess(
+        res,
+        await productsService.updateVideoTitle(
+          req.params.id,
+          req.params.videoId,
+          req.body.title,
+          requireAuth(req).userId
+        )
+      );
+    }
+  ),
+
+  reorderVideos: handle(
+    { params: idParamsSchema, body: reorderProductVideosBodySchema },
+    async (req, res) => {
+      sendSuccess(
+        res,
+        await productsService.reorderVideos(req.params.id, req.body.videoIds, requireAuth(req).userId)
+      );
+    }
+  ),
+
   updateSpecifications: handle(
     { params: idParamsSchema, body: updateProductSpecificationsBodySchema },
     async (req, res) => {
@@ -70,6 +220,98 @@ export const productsController = {
         await productsService.updateSpecifications(
           req.params.id,
           req.body.specifications,
+          requireAuth(req).userId
+        )
+      );
+    }
+  ),
+
+  addFeature: handle({ params: idParamsSchema, body: createProductFeatureBodySchema }, async (req, res) => {
+    sendSuccess(res, await productsService.createFeature(req.params.id, req.body, requireAuth(req).userId));
+  }),
+
+  updateFeature: handle(
+    { params: productFeatureParamsSchema, body: updateProductFeatureBodySchema },
+    async (req, res) => {
+      sendSuccess(
+        res,
+        await productsService.updateFeature(
+          req.params.id,
+          req.params.featureId,
+          req.body,
+          requireAuth(req).userId
+        )
+      );
+    }
+  ),
+
+  removeFeature: handle({ params: productFeatureParamsSchema }, async (req, res) => {
+    sendSuccess(
+      res,
+      await productsService.removeFeature(req.params.id, req.params.featureId, requireAuth(req).userId)
+    );
+  }),
+
+  reorderFeatures: handle(
+    { params: idParamsSchema, body: reorderProductFeaturesBodySchema },
+    async (req, res) => {
+      sendSuccess(
+        res,
+        await productsService.reorderFeatures(req.params.id, req.body.featureIds, requireAuth(req).userId)
+      );
+    }
+  ),
+
+  addKeyBenefit: handle(
+    { params: idParamsSchema, body: createProductKeyBenefitBodySchema },
+    async (req, res) => {
+      sendSuccess(
+        res,
+        await productsService.createKeyBenefit(req.params.id, req.body, requireAuth(req).userId)
+      );
+    }
+  ),
+
+  updateKeyBenefit: handle(
+    { params: productKeyBenefitParamsSchema, body: updateProductKeyBenefitBodySchema },
+    async (req, res) => {
+      sendSuccess(
+        res,
+        await productsService.updateKeyBenefit(
+          req.params.id,
+          req.params.benefitId,
+          req.body,
+          requireAuth(req).userId
+        )
+      );
+    }
+  ),
+
+  removeKeyBenefit: handle({ params: productKeyBenefitParamsSchema }, async (req, res) => {
+    sendSuccess(
+      res,
+      await productsService.removeKeyBenefit(req.params.id, req.params.benefitId, requireAuth(req).userId)
+    );
+  }),
+
+  reorderKeyBenefits: handle(
+    { params: idParamsSchema, body: reorderProductKeyBenefitsBodySchema },
+    async (req, res) => {
+      sendSuccess(
+        res,
+        await productsService.reorderKeyBenefits(req.params.id, req.body.benefitIds, requireAuth(req).userId)
+      );
+    }
+  ),
+
+  setRelatedProducts: handle(
+    { params: idParamsSchema, body: setRelatedProductsBodySchema },
+    async (req, res) => {
+      sendSuccess(
+        res,
+        await productsService.setRelatedProducts(
+          req.params.id,
+          req.body.relatedProductIds,
           requireAuth(req).userId
         )
       );
