@@ -45,6 +45,10 @@ export const industrialCapabilitiesController = {
     sendNoContent(res);
   }),
 
+  restore: handle({ params: idParamsSchema }, async (req, res) => {
+    sendSuccess(res, await industrialCapabilitiesService.restore(req.params.id, requireAuth(req).userId));
+  }),
+
   reorder: handle({ body: reorderIndustrialCapabilitiesBodySchema }, async (req, res) => {
     sendSuccess(res, await industrialCapabilitiesService.reorder(req.body, requireAuth(req).userId));
   }),

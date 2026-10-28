@@ -53,6 +53,11 @@ industrialCapabilitiesRouter.delete(
   authorize(Permission.INDUSTRIAL_CAPABILITIES_DELETE),
   industrialCapabilitiesController.remove
 );
+industrialCapabilitiesRouter.post(
+  '/:id/restore',
+  authorize(Permission.INDUSTRIAL_CAPABILITIES_UPDATE),
+  industrialCapabilitiesController.restore
+);
 
 // Image upload and removal
 industrialCapabilitiesRouter.post(

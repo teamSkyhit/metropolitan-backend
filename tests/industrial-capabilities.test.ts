@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
-import { beforeEach, describe, expect, it } from 'vitest';
+import type { IndustrialCapability } from '@prisma/client';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { industrialCapabilitiesRepository } from '../src/modules/industrial-capabilities/industrial-capabilities.repository';
 import { IndustrialCapabilitiesErrorCode } from '../src/modules/industrial-capabilities/industrial-capabilities.schema';
 import { api } from './helpers/app';
 import { signInAs, type Session } from './helpers/auth';
@@ -21,7 +23,7 @@ beforeEach(async () => {
 });
 
 describe('Industrial Capabilities Module', () => {
-  describe('Section Settings (backed by Homepage Sections)', () => {
+  describe('Section Settings (Dedicated Table Isolation)', () => {
     it('returns default section settings when none configured yet', async () => {
       const res = await api().get('/api/v1/industrial-capabilities/settings').set(admin.auth).expect(200);
 
@@ -50,6 +52,28 @@ describe('Industrial Capabilities Module', () => {
       const getRes = await api().get('/api/v1/industrial-capabilities/settings').set(sales.auth).expect(200);
 
       expect(getRes.body.data).toMatchObject(updatePayload);
+    });
+
+    it('enforces maximum length on settings description (1000 accepted, 1001 rejected)', async () => {
+      const maxDesc = 'A'.repeat(1000);
+      const overMaxDesc = 'A'.repeat(1001);
+
+      // 1000 chars -> 200 OK
+      const okRes = await api()
+        .patch('/api/v1/industrial-capabilities/settings')
+        .set(admin.auth)
+        .send({ description: maxDesc })
+        .expect(200);
+      expect(okRes.body.data.description).toBe(maxDesc);
+
+      // 1001 chars -> 400 Bad Request
+      const badRes = await api()
+        .patch('/api/v1/industrial-capabilities/settings')
+        .set(admin.auth)
+        .send({ description: overMaxDesc })
+        .expect(400);
+      expect(badRes.body.success).toBe(false);
+      expect(badRes.body.error.code).toBe('VALIDATION_ERROR');
     });
   });
 
@@ -214,6 +238,37 @@ describe('Industrial Capabilities Module', () => {
       expect(reorderRes.body.data[2].slug).toBe('seg-2');
       expect(reorderRes.body.data[2].sortOrder).toBe(2);
     });
+
+    it('enforces maximum length on capability description (5000 accepted, 5001 rejected on create and update)', async () => {
+      const maxDesc = 'B'.repeat(5000);
+      const overMaxDesc = 'B'.repeat(5001);
+
+      // Create with 5000 chars -> 201 OK
+      const createOk = await api()
+        .post('/api/v1/industrial-capabilities')
+        .set(admin.auth)
+        .send({ ...validCapability, slug: 'desc-5000-ok', description: maxDesc })
+        .expect(201);
+      expect(createOk.body.data.description).toBe(maxDesc);
+
+      // Create with 5001 chars -> 400 Bad Request
+      const createBad = await api()
+        .post('/api/v1/industrial-capabilities')
+        .set(admin.auth)
+        .send({ ...validCapability, slug: 'desc-5001-bad', description: overMaxDesc })
+        .expect(400);
+      expect(createBad.body.success).toBe(false);
+      expect(createBad.body.error.code).toBe('VALIDATION_ERROR');
+
+      // Update with 5001 chars -> 400 Bad Request
+      const updateBad = await api()
+        .patch(`/api/v1/industrial-capabilities/${createOk.body.data.id}`)
+        .set(admin.auth)
+        .send({ description: overMaxDesc })
+        .expect(400);
+      expect(updateBad.body.success).toBe(false);
+      expect(updateBad.body.error.code).toBe('VALIDATION_ERROR');
+    });
   });
 
   describe('Media Lifecycle & Uploads', () => {
@@ -346,6 +401,218 @@ describe('Industrial Capabilities Module', () => {
         expect(segment).not.toHaveProperty('updatedById');
         expect(segment).not.toHaveProperty('deletedAt');
       }
+    });
+  });
+
+  describe('Soft-Delete & Restore Workflow', () => {
+    it('successfully restores a soft-deleted industrial capability with audit metadata and cleared deletedAt', async () => {
+      const createRes = await api()
+        .post('/api/v1/industrial-capabilities')
+        .set(admin.auth)
+        .send({
+          title: 'Robotics & Automation',
+          slug: 'robotics-automation',
+          typicalProducts: ['Cobots', 'Grippers'],
+        })
+        .expect(201);
+
+      const id = createRes.body.data.id;
+
+      // Soft delete
+      await api().delete(`/api/v1/industrial-capabilities/${id}`).set(admin.auth).expect(204);
+
+      // Verify soft-deleted
+      const deletedRecord = await prisma.industrialCapability.findUniqueOrThrow({ where: { id } });
+      expect(deletedRecord.deletedAt).not.toBeNull();
+
+      // Restore via POST /api/v1/industrial-capabilities/:id/restore
+      const restoreRes = await api()
+        .post(`/api/v1/industrial-capabilities/${id}/restore`)
+        .set(admin.auth)
+        .expect(200);
+
+      expect(restoreRes.body.success).toBe(true);
+      expect(restoreRes.body.data.id).toBe(id);
+      expect(restoreRes.body.data.deletedAt).toBeUndefined();
+
+      // Verify DB record is active again and updatedById is tracked
+      const restoredInDb = await prisma.industrialCapability.findUniqueOrThrow({ where: { id } });
+      expect(restoredInDb.deletedAt).toBeNull();
+      expect(restoredInDb.updatedById).toBe(admin.user.id);
+
+      // Verify appears in active list again
+      const listRes = await api().get('/api/v1/industrial-capabilities').set(admin.auth).expect(200);
+      expect(listRes.body.data.find((c: { id: string }) => c.id === id)).toBeDefined();
+    });
+
+    it('rejects restore request for an active (non-deleted) capability with 400', async () => {
+      const createRes = await api()
+        .post('/api/v1/industrial-capabilities')
+        .set(admin.auth)
+        .send({
+          title: 'Active Segment',
+          slug: 'active-segment-restore-test',
+        })
+        .expect(201);
+
+      const id = createRes.body.data.id;
+
+      const restoreRes = await api()
+        .post(`/api/v1/industrial-capabilities/${id}/restore`)
+        .set(admin.auth)
+        .expect(400);
+
+      expect(restoreRes.body.success).toBe(false);
+      expect(restoreRes.body.error.code).toBe(IndustrialCapabilitiesErrorCode.NOT_DELETED);
+    });
+
+    it('rejects restore with 409 conflict when another active capability already holds the same slug', async () => {
+      const first = await api()
+        .post('/api/v1/industrial-capabilities')
+        .set(admin.auth)
+        .send({
+          title: 'Pneumatics',
+          slug: 'pneumatics',
+        })
+        .expect(201);
+
+      // Soft delete the capability
+      await api().delete(`/api/v1/industrial-capabilities/${first.body.data.id}`).set(admin.auth).expect(204);
+
+      // Simulate an active capability having the same slug
+      const spy = vi.spyOn(industrialCapabilitiesRepository, 'findBySlug').mockResolvedValueOnce({
+        id: randomUUID(),
+        slug: 'pneumatics',
+      } as unknown as IndustrialCapability);
+
+      // Attempt to restore the first capability -> 409 SLUG_CONFLICT
+      const restoreRes = await api()
+        .post(`/api/v1/industrial-capabilities/${first.body.data.id}/restore`)
+        .set(admin.auth)
+        .expect(409);
+
+      expect(restoreRes.body.success).toBe(false);
+      expect(restoreRes.body.error.code).toBe(IndustrialCapabilitiesErrorCode.SLUG_CONFLICT);
+
+      spy.mockRestore();
+    });
+
+    it('forbids CRM_USER from restoring industrial capabilities with 403', async () => {
+      const created = await api()
+        .post('/api/v1/industrial-capabilities')
+        .set(admin.auth)
+        .send({
+          title: 'Restricted Restore',
+          slug: 'restricted-restore',
+        })
+        .expect(201);
+
+      await api()
+        .delete(`/api/v1/industrial-capabilities/${created.body.data.id}`)
+        .set(admin.auth)
+        .expect(204);
+
+      await api()
+        .post(`/api/v1/industrial-capabilities/${created.body.data.id}/restore`)
+        .set(crmUser.auth)
+        .expect(403);
+    });
+  });
+
+  describe('Homepage CMS Isolation (No Ownership Leak)', () => {
+    it('proves IC settings and homepage_sections are strictly isolated', async () => {
+      // 1. Configure IC settings via IC API
+      const patchRes = await api()
+        .patch('/api/v1/industrial-capabilities/settings')
+        .set(admin.auth)
+        .send({
+          eyebrow: 'ISOLATED EYEBROW',
+          title: 'ISOLATED TITLE',
+          description: 'Isolated description text',
+        })
+        .expect(200);
+
+      expect(patchRes.body.success).toBe(true);
+
+      // 2. Fetch IC settings via IC API -> works
+      const icGetRes = await api()
+        .get('/api/v1/industrial-capabilities/settings')
+        .set(sales.auth)
+        .expect(200);
+      expect(icGetRes.body.data.eyebrow).toBe('ISOLATED EYEBROW');
+
+      // 3. CRM_USER cannot access IC settings -> 403
+      await api().get('/api/v1/industrial-capabilities/settings').set(crmUser.auth).expect(403);
+      await api().patch('/api/v1/industrial-capabilities/settings').set(crmUser.auth).send({}).expect(403);
+
+      // 4. Create an active homepage section (e.g. PROMO_BANNER)
+      const bannerMedia = await prisma.media.create({
+        data: {
+          fileName: 'banner.jpg',
+          storageKey: 'banner.jpg',
+          publicUrl: 'https://cdn.example.com/banner.jpg',
+          mimeType: 'image/jpeg',
+          fileSize: 1024,
+        },
+      });
+
+      await api()
+        .post('/api/v1/homepage/sections')
+        .set(admin.auth)
+        .send({
+          type: 'PROMO_BANNER',
+          sortOrder: 0,
+          isActive: true,
+          content: {
+            heading: 'Homepage Promo',
+            mediaId: bannerMedia.id,
+            ctaLabel: 'Learn More',
+            ctaUrl: '/promo',
+          },
+        })
+        .expect(201);
+
+      // 5. GET /api/v1/homepage/sections never returns IC settings
+      const homepageSectionsRes = await api().get('/api/v1/homepage/sections').set(admin.auth).expect(200);
+      expect(homepageSectionsRes.body.success).toBe(true);
+      const sections = homepageSectionsRes.body.data;
+      expect(sections.every((s: { type: string }) => s.type !== 'INDUSTRIAL_CAPABILITIES')).toBe(true);
+      expect(sections.find((s: { title?: string }) => s.title === 'ISOLATED TITLE')).toBeUndefined();
+
+      // Retrieve the dedicated IC settings DB record
+      const icSettingsDb = await prisma.industrialCapabilitySettings.findFirstOrThrow();
+
+      // 6. Homepage reorder cannot touch or reorder IC settings
+      await api()
+        .patch('/api/v1/homepage/sections/reorder')
+        .set(admin.auth)
+        .send({ sectionIds: [icSettingsDb.id] })
+        .expect(400);
+
+      // 7. Homepage update cannot mutate IC settings
+      await api()
+        .patch(`/api/v1/homepage/sections/${icSettingsDb.id}`)
+        .set(admin.auth)
+        .send({ isActive: false })
+        .expect(404);
+
+      // 8. Homepage delete cannot delete IC settings
+      await api().delete(`/api/v1/homepage/sections/${icSettingsDb.id}`).set(admin.auth).expect(404);
+
+      // Verify IC settings remains intact in DB
+      const icSettingsAfter = await prisma.industrialCapabilitySettings.findFirstOrThrow();
+      expect(icSettingsAfter.eyebrow).toBe('ISOLATED EYEBROW');
+      expect(icSettingsAfter.title).toBe('ISOLATED TITLE');
+    });
+
+    it('verifies user without industrial-capabilities permissions cannot manage IC settings', async () => {
+      // CRM_USER has no INDUSTRIAL_CAPABILITIES permissions
+      await api().get('/api/v1/industrial-capabilities/settings').set(crmUser.auth).expect(403);
+      await api()
+        .patch('/api/v1/industrial-capabilities/settings')
+        .set(crmUser.auth)
+        .send({ title: 'Hacked' })
+        .expect(403);
     });
   });
 

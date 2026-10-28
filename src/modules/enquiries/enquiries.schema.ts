@@ -67,7 +67,7 @@ const mobileSchema = z
   .meta({ example: '+91 98765 43210' });
 
 export const quoteItemInputSchema = z.object({
-  productId: z.string().trim().min(1, 'Product ID cannot be empty'),
+  productId: z.uuid('Product ID must be a valid UUID'),
   quantity: z
     .number({ error: 'Quantity must be an integer' })
     .int('Quantity must be an integer')

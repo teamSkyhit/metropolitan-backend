@@ -12,8 +12,6 @@ import type {
 
 export type IndustrialCapabilityRecord = IndustrialCapability;
 
-const HOMEPAGE_SECTION_TYPE = 'INDUSTRIAL_CAPABILITIES';
-
 export const industrialCapabilitiesRepository = {
   findById(id: string): Promise<IndustrialCapability | null> {
     return prisma.industrialCapability.findFirst({ where: { id, ...notDeleted } });
@@ -25,6 +23,10 @@ export const industrialCapabilitiesRepository = {
 
   findBySlugIncludingDeleted(slug: string): Promise<IndustrialCapability | null> {
     return prisma.industrialCapability.findUnique({ where: { slug } });
+  },
+
+  findBySlug(slug: string): Promise<IndustrialCapability | null> {
+    return prisma.industrialCapability.findFirst({ where: { slug, ...notDeleted } });
   },
 
   findByIds(ids: string[]): Promise<IndustrialCapability[]> {
@@ -178,22 +180,29 @@ export const industrialCapabilitiesRepository = {
 
   // ── Section Header Settings (reusing homepage_sections table) ───────────────
 
-  async getSectionSettings(): Promise<IndustrialCapabilitySectionSettingsDto> {
-    const section = await prisma.homepageSection.findFirst({
-      where: { type: HOMEPAGE_SECTION_TYPE, ...notDeleted },
+  async restore(id: string, actorId: string): Promise<IndustrialCapability> {
+    return prisma.industrialCapability.update({
+      where: { id },
+      data: {
+        deletedAt: null,
+        ...updatedBy(actorId),
+      },
     });
-    if (!section || !section.content || typeof section.content !== 'object') {
+  },
+
+  async getSectionSettings(): Promise<IndustrialCapabilitySectionSettingsDto> {
+    const settings = await prisma.industrialCapabilitySettings.findFirst();
+    if (!settings) {
       return {
         eyebrow: 'OUR INDUSTRIAL CAPABILITIES',
         title: 'SIX CORE SEGMENTS',
         description: '',
       };
     }
-    const content = section.content as Record<string, unknown>;
     return {
-      eyebrow: typeof content.eyebrow === 'string' ? content.eyebrow : 'OUR INDUSTRIAL CAPABILITIES',
-      title: typeof content.title === 'string' ? content.title : 'SIX CORE SEGMENTS',
-      description: typeof content.description === 'string' ? content.description : '',
+      eyebrow: settings.eyebrow ?? 'OUR INDUSTRIAL CAPABILITIES',
+      title: settings.title ?? 'SIX CORE SEGMENTS',
+      description: settings.description ?? '',
     };
   },
 
@@ -201,9 +210,7 @@ export const industrialCapabilitiesRepository = {
     settings: UpdateIndustrialCapabilitySectionSettingsBody,
     actorId: string
   ): Promise<IndustrialCapabilitySectionSettingsDto> {
-    const existing = await prisma.homepageSection.findFirst({
-      where: { type: HOMEPAGE_SECTION_TYPE, ...notDeleted },
-    });
+    const existing = await prisma.industrialCapabilitySettings.findFirst();
 
     const currentSettings = await this.getSectionSettings();
     const updatedSettings: IndustrialCapabilitySectionSettingsDto = {
@@ -214,24 +221,21 @@ export const industrialCapabilitiesRepository = {
     };
 
     if (existing) {
-      await prisma.homepageSection.update({
+      await prisma.industrialCapabilitySettings.update({
         where: { id: existing.id },
         data: {
+          eyebrow: updatedSettings.eyebrow,
           title: updatedSettings.title,
-          subtitle: updatedSettings.description,
-          content: updatedSettings as unknown as Prisma.InputJsonValue,
+          description: updatedSettings.description,
           ...updatedBy(actorId),
         },
       });
     } else {
-      await prisma.homepageSection.create({
+      await prisma.industrialCapabilitySettings.create({
         data: {
-          type: HOMEPAGE_SECTION_TYPE,
+          eyebrow: updatedSettings.eyebrow,
           title: updatedSettings.title,
-          subtitle: updatedSettings.description,
-          content: updatedSettings as unknown as Prisma.InputJsonValue,
-          isActive: true,
-          sortOrder: 0,
+          description: updatedSettings.description,
           ...createdBy(actorId),
         },
       });

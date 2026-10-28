@@ -169,6 +169,20 @@ export function registerIndustrialCapabilitiesDocs(registry: OpenAPIRegistry): v
 
   registry.registerPath({
     method: 'post',
+    path: '/industrial-capabilities/{id}/restore',
+    tags: adminTags,
+    security,
+    summary: 'Restore a deleted industrial capability',
+    description: 'Requires `industrial-capabilities:update`. Restores a soft-deleted capability.',
+    request: { params: idParamsSchema },
+    responses: {
+      200: jsonResponse('Restored', successBody(industrialCapabilitySchema)),
+      ...errorResponses(400, 401, 403, 404, 409),
+    },
+  });
+
+  registry.registerPath({
+    method: 'post',
     path: '/industrial-capabilities/{id}/image',
     tags: adminTags,
     security,

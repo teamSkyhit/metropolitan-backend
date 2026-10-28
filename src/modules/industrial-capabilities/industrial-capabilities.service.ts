@@ -189,6 +189,30 @@ export const industrialCapabilitiesService = {
     await industrialCapabilitiesRepository.softDelete(id, actorId);
   },
 
+  async restore(id: string, actorId: string): Promise<IndustrialCapabilityDto> {
+    const existing = await industrialCapabilitiesRepository.findByIdIncludingDeleted(id);
+    if (!existing) {
+      throw AppError.notFound('Industrial capability', IndustrialCapabilitiesErrorCode.NOT_FOUND);
+    }
+    if (!existing.deletedAt) {
+      throw AppError.badRequest(
+        'Industrial capability is not deleted',
+        IndustrialCapabilitiesErrorCode.NOT_DELETED
+      );
+    }
+
+    const liveConflict = await industrialCapabilitiesRepository.findBySlug(existing.slug);
+    if (liveConflict && liveConflict.id !== id) {
+      throw AppError.conflict(
+        'An active industrial capability with this slug already exists',
+        IndustrialCapabilitiesErrorCode.SLUG_CONFLICT
+      );
+    }
+
+    const restored = await industrialCapabilitiesRepository.restore(id, actorId);
+    return toIndustrialCapabilityDto(restored);
+  },
+
   async reorder(
     body: ReorderIndustrialCapabilitiesBody,
     actorId: string

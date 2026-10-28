@@ -166,10 +166,10 @@ export const enquiriesService = {
         };
       });
     } else if (lineItems && lineItems.length > 0) {
-      // Legacy support: if line items are provided
+      // Legacy support: if line items are provided, preserve legacy string in productId and never create unvalidated FK references
       resolvedLineItems = lineItems.map((item) => ({
         productId: item.productId,
-        productIdRef: UUID_REGEX.test(item.productId) ? item.productId : null,
+        productIdRef: null,
         sku: item.sku ?? 'SKU-PENDING',
         productName: item.productName ?? null,
         quantity: item.quantity,

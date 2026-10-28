@@ -93,6 +93,61 @@ describe('Regular CRM User (`CRM_USER`) Enquiries-Only RBAC Enforcement', () => 
     expect(res.body.success).toBe(false);
   });
 
+  it('explicitly forbids CRM_USER from assigning, reassigning, or changing enquiry ownership with 403', async () => {
+    const enquiry = await prisma.enquiry.create({
+      data: {
+        name: 'Jane Doe',
+        email: 'jane@example.com',
+        mobile: '+91 99999 88888',
+        message: 'Need a price quote',
+        status: 'NEW',
+      },
+    });
+
+    // CRM_USER attempt to assign -> 403 Forbidden
+    const assignRes = await api()
+      .put(`/api/v1/enquiries/${enquiry.id}/assignee`)
+      .set(crmUser.auth)
+      .send({ assignedToId: sales.user.id })
+      .expect(403);
+
+    expect(assignRes.body.success).toBe(false);
+
+    // Verify DB remains unassigned
+    const unmodifiedEnquiry = await prisma.enquiry.findUniqueOrThrow({ where: { id: enquiry.id } });
+    expect(unmodifiedEnquiry.assignedToId).toBeNull();
+    expect(unmodifiedEnquiry.status).toBe('NEW');
+
+    // Sales Manager can assign successfully -> 200 OK
+    const salesAssignRes = await api()
+      .put(`/api/v1/enquiries/${enquiry.id}/assignee`)
+      .set(sales.auth)
+      .send({ assignedToId: sales.user.id })
+      .expect(200);
+
+    expect(salesAssignRes.body.success).toBe(true);
+    expect(salesAssignRes.body.data.assignedTo?.id).toBe(sales.user.id);
+    expect(salesAssignRes.body.data.status).toBe('ASSIGNED');
+
+    // CRM_USER attempt to unassign / reassign -> 403 Forbidden
+    await api()
+      .put(`/api/v1/enquiries/${enquiry.id}/assignee`)
+      .set(crmUser.auth)
+      .send({ assignedToId: null })
+      .expect(403);
+
+    // Super Admin can reassign / unassign successfully -> 200 OK
+    const adminUnassignRes = await api()
+      .put(`/api/v1/enquiries/${enquiry.id}/assignee`)
+      .set(admin.auth)
+      .send({ assignedToId: null })
+      .expect(200);
+
+    expect(adminUnassignRes.body.success).toBe(true);
+    expect(adminUnassignRes.body.data.assignedTo).toBeNull();
+    expect(adminUnassignRes.body.data.status).toBe('NEW');
+  });
+
   it('preserves full access for SUPER_ADMIN and standard management for SALES_MANAGER', async () => {
     // Both can access products
     await api().get('/api/v1/products').set(admin.auth).expect(200);

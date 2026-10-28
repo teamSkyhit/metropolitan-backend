@@ -478,6 +478,20 @@ model IndustrialCapability {
   @@map("industrial_capabilities")
 }
 
+/// Dedicated singleton section settings for Industrial Capabilities on public website & CRM.
+model IndustrialCapabilitySettings {
+  id          String    @id @default(uuid()) @db.Uuid
+  eyebrow     String?   @default("OUR INDUSTRIAL CAPABILITIES") @db.VarChar(100)
+  title       String?   @default("SIX CORE SEGMENTS") @db.VarChar(200)
+  description String?   @default("") @db.VarChar(1000)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  createdById String?   @map("created_by_id") @db.Uuid
+  updatedById String?   @map("updated_by_id") @db.Uuid
+
+  @@map("industrial_capability_settings")
+}
+
 enum ContactStatus {
   NEW
   READ

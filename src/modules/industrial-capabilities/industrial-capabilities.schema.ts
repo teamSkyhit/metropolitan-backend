@@ -8,6 +8,7 @@ export const IndustrialCapabilitiesErrorCode = {
   SLUG_BELONGS_TO_DELETED: 'INDUSTRIAL_CAPABILITY_SLUG_BELONGS_TO_DELETED',
   INVALID_ICON: 'INVALID_INDUSTRIAL_CAPABILITY_ICON',
   IMAGE_NOT_FOUND: 'INDUSTRIAL_CAPABILITY_IMAGE_NOT_FOUND',
+  NOT_DELETED: 'INDUSTRIAL_CAPABILITY_NOT_DELETED',
 } as const;
 
 export type IndustrialCapabilitiesErrorCode =
@@ -130,7 +131,12 @@ export const createIndustrialCapabilityBodySchema = z
     imageUrl: mediaUrlSchema,
     icon: iconSchema.nullable().optional(),
     shortDescription: z.string().trim().max(500).nullable().optional(),
-    description: z.string().trim().nullable().optional(),
+    description: z
+      .string()
+      .trim()
+      .max(5000, 'Description cannot exceed 5000 characters')
+      .nullable()
+      .optional(),
     typicalProducts: typicalProductsSchema.optional().default([]),
     sortOrder: z
       .number()
@@ -150,7 +156,12 @@ export const updateIndustrialCapabilityBodySchema = z
     imageUrl: mediaUrlSchema,
     icon: iconSchema.nullable().optional(),
     shortDescription: z.string().trim().max(500).nullable().optional(),
-    description: z.string().trim().nullable().optional(),
+    description: z
+      .string()
+      .trim()
+      .max(5000, 'Description cannot exceed 5000 characters')
+      .nullable()
+      .optional(),
     typicalProducts: typicalProductsSchema.optional(),
     sortOrder: z
       .number()

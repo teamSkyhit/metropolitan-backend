@@ -264,29 +264,117 @@ describe('Multi-Product Add-to-Quote Submission (POST /api/v1/public/enquiries)'
     expect(afterLineItemCount).toBe(initialLineItemCount);
   });
 
-  it('preserves backwards compatibility for existing lineItems structure', async () => {
-    const res = await api()
-      .post('/api/v1/public/enquiries')
-      .send({
-        ...basePayload,
-        lineItems: [{ productId: 'custom-prod', sku: 'CUSTOM-10', productName: 'Custom Valve', quantity: 3 }],
-      })
-      .expect(201);
+  describe('Legacy lineItems Backwards Compatibility & Safety', () => {
+    it('preserves backwards compatibility for existing lineItems structure with arbitrary string', async () => {
+      const res = await api()
+        .post('/api/v1/public/enquiries')
+        .send({
+          ...basePayload,
+          lineItems: [
+            { productId: 'custom-prod', sku: 'CUSTOM-10', productName: 'Custom Valve', quantity: 3 },
+          ],
+        })
+        .expect(201);
 
-    expect(res.body.success).toBe(true);
+      expect(res.body.success).toBe(true);
 
-    const stored = await prisma.enquiry.findUniqueOrThrow({
-      where: { id: res.body.data.id },
-      include: { lineItems: true },
+      const stored = await prisma.enquiry.findUniqueOrThrow({
+        where: { id: res.body.data.id },
+        include: { lineItems: true },
+      });
+
+      expect(stored.lineItems).toHaveLength(1);
+      expect(stored.lineItems[0]).toMatchObject({
+        productId: 'custom-prod',
+        productIdRef: null,
+        sku: 'CUSTOM-10',
+        productName: 'Custom Valve',
+        quantity: 3,
+      });
     });
 
-    expect(stored.lineItems).toHaveLength(1);
-    expect(stored.lineItems[0]).toMatchObject({
-      productId: 'custom-prod',
-      productIdRef: null,
-      sku: 'CUSTOM-10',
-      productName: 'Custom Valve',
-      quantity: 3,
+    it('safely handles legacy lineItems with UUID-shaped non-existent productId without 500 or FK error', async () => {
+      const nonExistentUuid = randomUUID();
+      const res = await api()
+        .post('/api/v1/public/enquiries')
+        .send({
+          ...basePayload,
+          lineItems: [{ productId: nonExistentUuid, sku: 'LEGACY-UUID', quantity: 1 }],
+        })
+        .expect(201);
+
+      expect(res.body.success).toBe(true);
+
+      const stored = await prisma.enquiry.findUniqueOrThrow({
+        where: { id: res.body.data.id },
+        include: { lineItems: true },
+      });
+
+      expect(stored.lineItems).toHaveLength(1);
+      expect(stored.lineItems[0]!.productId).toBe(nonExistentUuid);
+      expect(stored.lineItems[0]!.productIdRef).toBeNull();
+    });
+
+    it('safely handles legacy lineItems with UUID of DRAFT Product without invalid relational ref', async () => {
+      const res = await api()
+        .post('/api/v1/public/enquiries')
+        .send({
+          ...basePayload,
+          lineItems: [{ productId: draftProd.id, sku: draftProd.sku, quantity: 2 }],
+        })
+        .expect(201);
+
+      expect(res.body.success).toBe(true);
+
+      const stored = await prisma.enquiry.findUniqueOrThrow({
+        where: { id: res.body.data.id },
+        include: { lineItems: true },
+      });
+
+      expect(stored.lineItems).toHaveLength(1);
+      expect(stored.lineItems[0]!.productId).toBe(draftProd.id);
+      expect(stored.lineItems[0]!.productIdRef).toBeNull();
+    });
+
+    it('safely handles legacy lineItems with UUID of soft-deleted Product without invalid relational ref', async () => {
+      const res = await api()
+        .post('/api/v1/public/enquiries')
+        .send({
+          ...basePayload,
+          lineItems: [{ productId: deletedProd.id, sku: deletedProd.sku, quantity: 5 }],
+        })
+        .expect(201);
+
+      expect(res.body.success).toBe(true);
+
+      const stored = await prisma.enquiry.findUniqueOrThrow({
+        where: { id: res.body.data.id },
+        include: { lineItems: true },
+      });
+
+      expect(stored.lineItems).toHaveLength(1);
+      expect(stored.lineItems[0]!.productId).toBe(deletedProd.id);
+      expect(stored.lineItems[0]!.productIdRef).toBeNull();
+    });
+  });
+
+  describe('Modern items[].productId UUID Schema Validation', () => {
+    it.each([
+      ['malformed string', 'not-a-uuid'],
+      ['blank string', ''],
+      ['integer string', '12345'],
+      ['partial uuid', '123e4567-e89b-12d3'],
+    ])('rejects non-UUID productId at schema validation level with 400 (%s)', async (_label, invalidId) => {
+      const res = await api()
+        .post('/api/v1/public/enquiries')
+        .send({
+          ...basePayload,
+          items: [{ productId: invalidId, quantity: 1 }],
+        })
+        .expect(400);
+
+      expect(res.body.success).toBe(false);
+      expect(res.body.error.code).toBe('VALIDATION_ERROR');
     });
   });
 });
