@@ -1,5 +1,6 @@
 import { AppError } from '../../shared/errors';
 import { buildPaginationMeta, type Paginated } from '../../shared/http';
+import { productsService } from '../products';
 import { usersService } from '../users';
 import {
   enquiriesDashboardQueryService,
@@ -7,6 +8,7 @@ import {
 } from './enquiries-dashboard-query.service';
 import {
   enquiriesRepository,
+  type EnquiryCreateLineItemData,
   type EnquiryDetailRecord,
   type EnquirySummaryRecord,
   type StatusUpdate,
@@ -24,6 +26,8 @@ import {
   type SubmitEnquiryBody,
   type SubmitEnquiryResponse,
 } from './enquiries.schema';
+
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 /**
  * Sales pipeline. `NEW` and `ASSIGNED` are driven by assignment; every other
@@ -120,7 +124,61 @@ const concurrentUpdate = () =>
 
 export const enquiriesService = {
   async submit(input: SubmitEnquiryBody, sourceIp: string | undefined): Promise<SubmitEnquiryResponse> {
-    const created = await enquiriesRepository.create(input, sourceIp);
+    const { items, lineItems, ...fields } = input;
+
+    let resolvedLineItems: EnquiryCreateLineItemData[];
+
+    if (items && items.length > 0) {
+      // Check for duplicate product IDs
+      const seenProductIds = new Set<string>();
+      for (const item of items) {
+        if (seenProductIds.has(item.productId)) {
+          throw AppError.badRequest(
+            `Duplicate product in quote items: ${item.productId}`,
+            EnquiriesErrorCode.DUPLICATE_PRODUCT,
+            { productId: item.productId }
+          );
+        }
+        seenProductIds.add(item.productId);
+      }
+
+      // Validate all product IDs are valid UUIDs
+      for (const item of items) {
+        if (!UUID_REGEX.test(item.productId)) {
+          throw AppError.badRequest(
+            `Product not found: ${item.productId}`,
+            EnquiriesErrorCode.PRODUCT_NOT_FOUND,
+            { productId: item.productId }
+          );
+        }
+      }
+
+      const snapshotMap = await productsService.validateForQuote(items.map((i) => i.productId));
+
+      resolvedLineItems = items.map((item) => {
+        const snapshot = snapshotMap.get(item.productId)!;
+        return {
+          productId: item.productId,
+          productIdRef: snapshot.id,
+          sku: snapshot.sku,
+          productName: snapshot.name,
+          quantity: item.quantity,
+        };
+      });
+    } else if (lineItems && lineItems.length > 0) {
+      // Legacy support: if line items are provided, preserve legacy string in productId and never create unvalidated FK references
+      resolvedLineItems = lineItems.map((item) => ({
+        productId: item.productId,
+        productIdRef: null,
+        sku: item.sku ?? 'SKU-PENDING',
+        productName: item.productName ?? null,
+        quantity: item.quantity,
+      }));
+    } else {
+      throw AppError.badRequest('At least one item is required', EnquiriesErrorCode.ITEMS_REQUIRED);
+    }
+
+    const created = await enquiriesRepository.create(fields, resolvedLineItems, sourceIp);
     return { id: created.id, status: created.status, createdAt: created.createdAt.toISOString() };
   },
 

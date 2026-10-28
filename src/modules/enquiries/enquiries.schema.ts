@@ -35,6 +35,12 @@ export const EnquiriesErrorCode = {
   CLOSED: 'ENQUIRY_CLOSED',
   ASSIGNEE_UNAVAILABLE: 'ENQUIRY_ASSIGNEE_UNAVAILABLE',
   CONCURRENT_UPDATE: 'ENQUIRY_CONCURRENT_UPDATE',
+  ITEMS_REQUIRED: 'QUOTE_ITEMS_REQUIRED',
+  TOO_MANY_ITEMS: 'QUOTE_TOO_MANY_ITEMS',
+  INVALID_QUANTITY: 'INVALID_QUOTE_QUANTITY',
+  PRODUCT_NOT_FOUND: 'QUOTE_PRODUCT_NOT_FOUND',
+  PRODUCT_UNAVAILABLE: 'QUOTE_PRODUCT_UNAVAILABLE',
+  DUPLICATE_PRODUCT: 'DUPLICATE_QUOTE_PRODUCT',
 } as const;
 
 export const MAX_LINE_ITEMS = 50;
@@ -60,9 +66,18 @@ const mobileSchema = z
   }, 'Mobile number must have 7 to 15 digits')
   .meta({ example: '+91 98765 43210' });
 
+export const quoteItemInputSchema = z.object({
+  productId: z.uuid('Product ID must be a valid UUID'),
+  quantity: z
+    .number({ error: 'Quantity must be an integer' })
+    .int('Quantity must be an integer')
+    .min(1, 'Quantity must be at least 1')
+    .max(MAX_QUANTITY, 'Quantity cannot exceed 1,000,000'),
+});
+
 const lineItemInputSchema = z.object({
   productId: z.string().trim().min(1).max(100),
-  sku: z.string().trim().min(1).max(100),
+  sku: z.string().trim().min(1).max(100).optional(),
   productName: optionalText(200),
   quantity: z.number().int().min(1).max(MAX_QUANTITY),
 });
@@ -79,7 +94,12 @@ export const submitEnquiryBodySchema = z
     state: optionalText(100),
     country: optionalText(100),
     message: optionalText(2000),
-    lineItems: z.array(lineItemInputSchema).min(1).max(MAX_LINE_ITEMS),
+    items: z.array(quoteItemInputSchema).min(1).max(MAX_LINE_ITEMS).optional(),
+    lineItems: z.array(lineItemInputSchema).min(1).max(MAX_LINE_ITEMS).optional(),
+  })
+  .refine((body) => (body.items && body.items.length > 0) || (body.lineItems && body.lineItems.length > 0), {
+    message: 'At least one quote item or line item is required',
+    path: ['items'],
   })
   .meta({ id: 'SubmitEnquiryRequest' });
 

@@ -20,6 +20,7 @@ datasource db {
 enum Role {
   SUPER_ADMIN
   SALES_MANAGER
+  CRM_USER
 }
 
 model User {
@@ -123,19 +124,22 @@ model Enquiry {
 }
 
 model EnquiryLineItem {
-  id          String   @id @default(uuid()) @db.Uuid
-  enquiryId   String   @map("enquiry_id") @db.Uuid
-  productId   String   @map("product_id") @db.VarChar(100)
-  sku         String   @db.VarChar(100)
-  productName String?  @map("product_name") @db.VarChar(200)
-  quantity    Int
+  id           String   @id @default(uuid()) @db.Uuid
+  enquiryId    String   @map("enquiry_id") @db.Uuid
+  productId    String   @map("product_id") @db.VarChar(100)
+  productIdRef String?  @map("product_id_ref") @db.Uuid
+  sku          String   @db.VarChar(100)
+  productName  String?  @map("product_name") @db.VarChar(200)
+  quantity     Int
   /// Order in which the customer listed the items (0-based).
-  position    Int      @default(0)
-  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  position     Int      @default(0)
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
-  enquiry Enquiry @relation(fields: [enquiryId], references: [id], onDelete: Restrict)
+  enquiry Enquiry  @relation(fields: [enquiryId], references: [id], onDelete: Restrict)
+  product Product? @relation(fields: [productIdRef], references: [id], onDelete: SetNull)
 
   @@index([enquiryId])
+  @@index([productIdRef])
   @@index([sku])
   @@map("enquiry_line_items")
 }
@@ -209,6 +213,7 @@ model Category {
   imageMediaId  String?   @map("image_media_id") @db.Uuid
   bannerUrl     String?   @map("banner_url") @db.VarChar(500)
   bannerMediaId String?   @map("banner_media_id") @db.Uuid
+  icon          String?   @db.VarChar(100)
   description   String?   @db.VarChar(2000)
   isActive      Boolean   @default(true) @map("is_active")
   sortOrder     Int       @default(0) @map("sort_order")
@@ -278,6 +283,7 @@ model Product {
   keyBenefits         ProductKeyBenefit[]
   relatedProducts     ProductRelatedProduct[] @relation("ProductRelatedTo")
   relatedFromProducts ProductRelatedProduct[] @relation("ProductRelatedFrom")
+  enquiryLineItems    EnquiryLineItem[]
 
   @@index([brandId])
   @@index([categoryId])
@@ -429,18 +435,61 @@ model Media {
   createdById  String?   @map("created_by_id") @db.Uuid
   updatedById  String?   @map("updated_by_id") @db.Uuid
 
-  uploadedBy           User?                 @relation("MediaUploader", fields: [uploadedById], references: [id], onDelete: SetNull)
-  productGalleryImages ProductGalleryImage[]
-  productVideos        ProductVideo[]
-  productDocuments     ProductDocument[]
-  categoryImages       Category[]            @relation("CategoryImageMedia")
-  categoryBanners      Category[]            @relation("CategoryBannerMedia")
+  uploadedBy             User?                  @relation("MediaUploader", fields: [uploadedById], references: [id], onDelete: SetNull)
+  productGalleryImages   ProductGalleryImage[]
+  productVideos          ProductVideo[]
+  productDocuments       ProductDocument[]
+  categoryImages         Category[]             @relation("CategoryImageMedia")
+  categoryBanners        Category[]             @relation("CategoryBannerMedia")
+  industrialCapabilities IndustrialCapability[] @relation("IndustrialCapabilityImageMedia")
 
   @@index([deletedAt, createdAt])
   @@index([fileName])
   @@index([mimeType])
   @@index([publicUrl])
   @@map("media")
+}
+
+/// Industrial Capability segment representation for public website and CRM management.
+model IndustrialCapability {
+  id               String    @id @default(uuid()) @db.Uuid
+  number           String?   @db.VarChar(20)
+  title            String    @db.VarChar(200)
+  slug             String    @unique @db.VarChar(120)
+  imageUrl         String?   @map("image_url") @db.VarChar(500)
+  imageMediaId     String?   @map("image_media_id") @db.Uuid
+  icon             String?   @db.VarChar(100)
+  shortDescription String?   @map("short_description") @db.VarChar(500)
+  description      String?   @db.Text
+  typicalProducts  Json      @default("[]") @map("typical_products") @db.JsonB
+  sortOrder        Int       @default(0) @map("sort_order")
+  isActive         Boolean   @default(true) @map("is_active")
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt        DateTime? @map("deleted_at") @db.Timestamptz(3)
+  createdById      String?   @map("created_by_id") @db.Uuid
+  updatedById      String?   @map("updated_by_id") @db.Uuid
+
+  imageMedia Media? @relation("IndustrialCapabilityImageMedia", fields: [imageMediaId], references: [id], onDelete: SetNull)
+
+  @@index([deletedAt, sortOrder, title])
+  @@index([deletedAt, isActive])
+  @@index([imageMediaId])
+  @@map("industrial_capabilities")
+}
+
+/// Dedicated singleton section settings for Industrial Capabilities on public website & CRM.
+model IndustrialCapabilitySettings {
+  id          String    @id @default(uuid()) @db.Uuid
+  eyebrow     String?   @default("OUR INDUSTRIAL CAPABILITIES") @db.VarChar(100)
+  title       String?   @default("SIX CORE SEGMENTS") @db.VarChar(200)
+  description String?   @default("") @db.VarChar(1000)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  createdById String?   @map("created_by_id") @db.Uuid
+  updatedById String?   @map("updated_by_id") @db.Uuid
+
+  @@map("industrial_capability_settings")
 }
 
 enum ContactStatus {

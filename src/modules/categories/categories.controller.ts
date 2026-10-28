@@ -11,6 +11,7 @@ import {
   createCategoryBodySchema,
   listCategoriesQuerySchema,
   publicCategorySlugParamsSchema,
+  reorderCategoriesBodySchema,
   updateCategoryBodySchema,
 } from './categories.schema';
 import { categoriesService } from './categories.service';
@@ -22,6 +23,10 @@ export const categoriesController = {
   list: handle({ query: listCategoriesQuerySchema }, async (req, res) => {
     const { items, pagination } = await categoriesService.list(req.query);
     sendPaginated(res, items, pagination);
+  }),
+
+  reorder: handle({ body: reorderCategoriesBodySchema }, async (req, res) => {
+    sendSuccess(res, await categoriesService.reorder(req.body, requireAuth(req).userId));
   }),
 
   getById: handle({ params: idParamsSchema }, async (req, res) => {

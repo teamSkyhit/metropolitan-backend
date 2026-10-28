@@ -427,6 +427,36 @@ export const productsService = {
     return records.map((record) => toPublicProductDto(record));
   },
 
+  async validateForQuote(
+    productIds: string[]
+  ): Promise<Map<string, { id: string; name: string; sku: string }>> {
+    const products = await productsRepository.findForQuoteValidation(productIds);
+    const productMap = new Map(products.map((p) => [p.id, p]));
+
+    const snapshotMap = new Map<string, { id: string; name: string; sku: string }>();
+
+    for (const id of productIds) {
+      const product = productMap.get(id);
+      if (!product || product.deletedAt !== null) {
+        throw AppError.badRequest(
+          `Product not found or unavailable for quote: ${id}`,
+          'QUOTE_PRODUCT_NOT_FOUND',
+          { productId: id }
+        );
+      }
+      if (product.status !== 'PUBLISHED') {
+        throw AppError.badRequest(
+          `Product is not available for quote: ${product.name}`,
+          'QUOTE_PRODUCT_UNAVAILABLE',
+          { productId: id, status: product.status }
+        );
+      }
+      snapshotMap.set(id, { id: product.id, name: product.name, sku: product.sku });
+    }
+
+    return snapshotMap;
+  },
+
   async getBySlugPublic(slug: string): Promise<PublicProductDto> {
     const record = await productsRepository.findByIdOrSkuPublic(slug);
     if (!record) throw AppError.notFound('Product');

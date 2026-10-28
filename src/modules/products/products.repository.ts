@@ -427,6 +427,22 @@ export const productsRepository = {
     });
   },
 
+  async findForQuoteValidation(
+    ids: string[]
+  ): Promise<Array<{ id: string; name: string; sku: string; status: string; deletedAt: Date | null }>> {
+    if (ids.length === 0) return [];
+    return prisma.product.findMany({
+      where: { id: { in: ids } },
+      select: {
+        id: true,
+        name: true,
+        sku: true,
+        status: true,
+        deletedAt: true,
+      },
+    });
+  },
+
   async lockProduct(productId: string, tx: Prisma.TransactionClient): Promise<void> {
     if (isUuid(productId)) {
       await tx.$executeRaw`SELECT id FROM products WHERE id = ${productId}::uuid AND deleted_at IS NULL FOR UPDATE`;

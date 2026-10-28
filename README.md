@@ -59,20 +59,21 @@ npm run dev             # http://localhost:5000
 
 ## Modules
 
-| Module        | CRM endpoints (`/api/v1`)                                                        | Public endpoints (`/api/v1/public`)        | Restore Supported                    |
-| ------------- | -------------------------------------------------------------------------------- | ------------------------------------------ | ------------------------------------ |
-| health        | `GET /health`, `GET /health/ready`                                               | n/a                                        | n/a                                  |
-| auth          | login, refresh, logout, logout-all, me, change-password                          | n/a                                        | n/a                                  |
-| users         | CRUD for Sales Managers, lookup, status, reset, restore                          | n/a                                        | Yes (`POST /users/:id/restore`)      |
-| enquiries     | list, detail, notes, status, assignee, follow-ups, delete                        | `POST /enquiries`                          | No                                   |
-| brands        | list, create, detail, update, delete, restore, logo/banner                       | `GET /brands`, `GET /brands/:slug`         | Yes (`POST /brands/:id/restore`)     |
-| categories    | list, create, detail, update, delete, restore, image, banner                     | `GET /categories`, `GET /categories/:slug` | Yes (`POST /categories/:id/restore`) |
-| products      | list, create, detail, update, delete, restore, gallery, videos, documents, specs | `GET /products`, `GET /products/:slug`     | Yes (`POST /products/:id/restore`)   |
-| media         | list, detail, upload, delete (with in-use reference guard)                       | n/a                                        | No                                   |
-| dashboard     | summary, trends, recent-enquiries                                                | n/a                                        | n/a                                  |
-| contacts      | list, detail, status, delete                                                     | `POST /contacts` (alias: `/contact`)       | No                                   |
-| notifications | list, unread-count, read-all, mark-read                                          | n/a                                        | No                                   |
-| homepage      | list, detail, create, update, delete, reorder                                    | `GET /homepage`                            | No                                   |
+| Module                  | CRM endpoints (`/api/v1`)                                                        | Public endpoints (`/api/v1/public`)                                                                           | Restore Supported                                 |
+| ----------------------- | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| health                  | `GET /health`, `GET /health/ready`                                               | n/a                                                                                                           | n/a                                               |
+| auth                    | login, refresh, logout, logout-all, me, change-password                          | n/a                                                                                                           | n/a                                               |
+| users                   | CRUD for Sales Managers, lookup, status, reset, restore                          | n/a                                                                                                           | Yes (`POST /users/:id/restore`)                   |
+| enquiries               | list, detail, notes, status, assignee, follow-ups, delete                        | `POST /enquiries`                                                                                             | No                                                |
+| brands                  | list, create, detail, update, delete, restore, logo/banner                       | `GET /brands`, `GET /brands/:slug`                                                                            | Yes (`POST /brands/:id/restore`)                  |
+| categories              | list, create, detail, update, delete, restore, image, banner                     | `GET /categories`, `GET /categories/:slug`                                                                    | Yes (`POST /categories/:id/restore`)              |
+| products                | list, create, detail, update, delete, restore, gallery, videos, documents, specs | `GET /products`, `GET /products/:slug`                                                                        | Yes (`POST /products/:id/restore`)                |
+| media                   | list, detail, upload, delete (with in-use reference guard)                       | n/a                                                                                                           | No                                                |
+| dashboard               | summary, trends, recent-enquiries                                                | n/a                                                                                                           | n/a                                               |
+| contacts                | list, detail, status, delete                                                     | `POST /contacts` (alias: `/contact`)                                                                          | No                                                |
+| notifications           | list, unread-count, read-all, mark-read                                          | n/a                                                                                                           | No                                                |
+| homepage                | list, detail, create, update, delete, reorder                                    | `GET /homepage`                                                                                               | No                                                |
+| industrial-capabilities | list, create, detail, update, delete, restore, reorder, image, settings          | `GET /industrial-capabilities`, `GET /industrial-capabilities/:slug`, `GET /industrial-capabilities/settings` | Yes (`POST /industrial-capabilities/:id/restore`) |
 
 Full request/response contracts: Swagger UI at `/api/docs`. Swagger is available in local and staging environments, and disabled in production.
 
@@ -173,6 +174,23 @@ Full request/response contracts: Swagger UI at `/api/docs`. Swagger is available
 - **Media Reference Protection**:
   - `DELETE /api/v1/media/:id` is blocked with HTTP 409 Conflict (`MEDIA_IN_USE`) if referenced by active `Product.imageUrl`, `ProductGalleryImage`, `ProductVideo`, `ProductDocument`, `Category.imageMediaId/imageUrl`, `Category.bannerMediaId/bannerUrl`, Brand asset, or Homepage section slide.
 
+### Categories: Dynamic Icons & Reordering
+
+- **Dynamic Icon Management**:
+  - Categories support a dynamic `icon` field manageable via CRM create (`POST /api/v1/categories`) and update (`PATCH /api/v1/categories/:id`).
+  - **Allowed Formats & Rules**:
+    - Lucide icon identifier (e.g. `gear`, `droplet`, `power-transmission` matching `^[a-z0-9]+(?:-[a-z0-9]+)*$`).
+    - Secure HTTPS icon URL (e.g. `https://assets.example.com/icons/gear.svg`).
+    - Root-relative SVG path (e.g. `/icons/categories/gear.svg`).
+    - Unsafe schemes (`javascript:`, `data:`, `file:`, `//`), insecure HTTP URLs, raw `<svg>` markup, `<script>` tags, and spaces/disallowed characters are strictly rejected with HTTP 400.
+  - Setting `icon: null` or omitting during creation leaves the category without an icon (`null`).
+- **Category Reordering**:
+  - `PATCH /api/v1/categories/reorder` atomically updates display sort orders (`sortOrder`) across all categories.
+  - Requires `categories:update` permission.
+  - Executes inside a database transaction (`prisma.$transaction`), validating that every provided ID exists and is non-deleted, rejecting duplicates, and tracking `updatedById`.
+- **Public Icon Exposure**:
+  - Public category listing (`GET /api/v1/public/categories`) and detail (`GET /api/v1/public/categories/:slug`) return `icon` alongside `imageUrl` and `bannerUrl`.
+
 ### Restore Policy Summary
 
 Soft-delete restore endpoints (`POST /api/v1/<module>/:id/restore`) are supported for:
@@ -181,6 +199,7 @@ Soft-delete restore endpoints (`POST /api/v1/<module>/:id/restore`) are supporte
 - **Brands**: Restores soft-deleted brand (`brands:delete` permission).
 - **Categories**: Restores soft-deleted category (`categories:delete` permission).
 - **Products**: Restores soft-deleted product (`products:delete` permission).
+- **Industrial Capabilities**: Restores soft-deleted capability (`industrial-capabilities:update` permission).
 
 Restore is intentionally **not supported** (absent) for transactional, audit, or content records:
 
@@ -238,6 +257,35 @@ Restore is intentionally **not supported** (absent) for transactional, audit, or
   - If all referenced items within a section are stale or inactive (0 valid items remaining), the empty section is safely omitted from the public response to prevent broken UI layouts and 500 errors.
 - **CTA URL Security**:
   - Validates all CTA links against an approved pattern: internal relative paths starting with `/` (e.g. `/products`) or secure HTTP/HTTPS URLs. Unsafe schemes (`javascript:`, `data:`, `file:`, `//`) and whitespace are rejected.
+
+### Industrial Capabilities Module
+
+- **Dynamic Module Architecture**:
+  - Fully dynamic management of Industrial Capability cards and core segments.
+- **Dedicated Settings Ownership**:
+  - `GET /api/v1/industrial-capabilities/settings`: Retrieves the section eyebrow, title, and description (`industrial-capabilities:read`).
+  - `PATCH /api/v1/industrial-capabilities/settings`: Updates the section eyebrow, title, and description (`industrial-capabilities:update`).
+  - **Ownership Isolation**: Section settings are stored in a dedicated singleton table `industrial_capability_settings` owned exclusively by the `industrial-capabilities` module. They are completely decoupled from `homepage_sections` and immune to homepage mutation, deletion, or reordering. `HOMEPAGE_*` permissions cannot read, mutate, or delete these settings.
+  - **Validation**: Settings description is constrained to a maximum of 1,000 characters.
+- **CRM Management Endpoints (`/api/v1/industrial-capabilities`)**:
+  - `GET /api/v1/industrial-capabilities`: List capability cards with search, pagination, and active filters (`industrial-capabilities:read`).
+  - `GET /api/v1/industrial-capabilities/:id`: Retrieve single capability card detail (`industrial-capabilities:read`).
+  - `POST /api/v1/industrial-capabilities`: Create capability card with unique slug, number, title, icon, typical products array, and description (`industrial-capabilities:create`). Enforces max 5,000 characters on `description`.
+  - `PATCH /api/v1/industrial-capabilities/:id`: Partial update of capability card fields (`industrial-capabilities:update`). Enforces max 5,000 characters on `description`.
+  - `PATCH /api/v1/industrial-capabilities/reorder`: Atomic reordering of capabilities by UUID array (`industrial-capabilities:update`).
+  - `DELETE /api/v1/industrial-capabilities/:id`: Soft-deletes capability card, excludes from active lists, and records `deletedAt` and audit metadata (`industrial-capabilities:delete`).
+  - `POST /api/v1/industrial-capabilities/:id/restore`: Restores soft-deleted capability card (`industrial-capabilities:update`). Validates that the record is deleted, checks for active duplicate slug conflicts, clears `deletedAt`, and updates audit metadata.
+  - `PUT /api/v1/industrial-capabilities/:id/image`: Upload or replace capability card image (`industrial-capabilities:update`).
+  - `DELETE /api/v1/industrial-capabilities/:id/image`: Remove capability card image (`industrial-capabilities:update`).
+- **Media Lifecycle & Reference Isolation**:
+  - Capability card images are integrated with the Media Library.
+  - Uploading a replacement image or deleting an image automatically prunes the previous Media Library asset via `mediaService.deleteIfUnreferenced()`, preventing orphan storage objects and stale database rows.
+- **Public Website Endpoint**:
+  - `GET /api/v1/public/industrial-capabilities`: Public, unauthenticated, rate-limited endpoint returning section settings and active segments ordered by `sortOrder ASC, id ASC`.
+  - Internal audit metadata (`createdById`, `updatedById`, `deletedAt`) and media references (`imageMediaId`) are excluded from public responses.
+- **Permissions**:
+  - Access is governed strictly by `industrial-capabilities:read`, `industrial-capabilities:create`, `industrial-capabilities:update`, and `industrial-capabilities:delete`.
+  - Both `SUPER_ADMIN` and `SALES_MANAGER` are granted full access. `CRM_USER` is denied all access (403 Forbidden).
 
 ### Storage & Media Library
 
@@ -304,6 +352,41 @@ Restore is intentionally **not supported** (absent) for transactional, audit, or
 `NEW → (assign) → ASSIGNED → CONTACTED → QUOTATION_SENT ⇄ NEGOTIATION → CLOSED_WON | CLOSED_LOST`.
 Any open status can move to `CLOSED_LOST`. A lost enquiry can be reopened to `CONTACTED`; a won
 one is final. Every change is recorded in the status history with who made it.
+
+### Regular CRM User (`CRM_USER`) Role & Permission Matrix
+
+The `CRM_USER` role provides focused access strictly scoped to handling enquiries, without administrative or catalog management privileges.
+
+- **Allowed Operations**:
+  - `enquiries:read`: List enquiries (`GET /api/v1/enquiries`) and view enquiry detail (`GET /api/v1/enquiries/:id`).
+  - `enquiries:update`: Update enquiry status (`POST /api/v1/enquiries/:id/status`) and edit sales notes (`PATCH /api/v1/enquiries/:id`).
+  - `enquiries:follow-up`: Add customer follow-up entries (`POST /api/v1/enquiries/:id/follow-ups`).
+- **Denied Operations (HTTP 403 Forbidden)**:
+  - **Enquiry Assignment**: `PUT /api/v1/enquiries/:id/assignee` requires `enquiries:assign`. `CRM_USER` cannot assign, reassign, or alter enquiry ownership.
+  - **Products**: All endpoints under `/api/v1/products` (read, create, update, delete, media, specifications).
+  - **Categories**: All endpoints under `/api/v1/categories` (read, create, update, delete, reorder, media).
+  - **Brands**: All endpoints under `/api/v1/brands` (read, create, update, delete, media).
+  - **Users**: All endpoints under `/api/v1/users` (read, create, status, password reset, restore).
+  - **Homepage**: All endpoints under `/api/v1/homepage/sections` (read, create, update, delete, reorder).
+  - **Media Library**: All endpoints under `/api/v1/media` (list, upload, delete).
+  - **Industrial Capabilities**: All endpoints under `/api/v1/industrial-capabilities` (list, detail, create, update, delete, restore, reorder, image, settings).
+  - **Dashboard**: All endpoints under `/api/v1/dashboard/*` and `/api/v1/enquiries/dashboard`.
+
+### Add to Quote (Multi-Product Enquiries)
+
+- **Submission Endpoint**: `POST /api/v1/public/enquiries`
+  - Protected with `rateLimiters.publicForm` and captcha verification (`enquiry_submit`).
+- **Modern `items[]` Quote Structure**:
+  - Accepts an array of quote items: `items: [{ productId, quantity }]`.
+  - **Product ID Validation**: `productId` must be a valid UUID format (`z.uuid()`). Malformed, blank, or non-UUID strings are rejected at the schema level with HTTP 400 (`VALIDATION_ERROR`).
+  - **Quantity Rules**: `quantity` must be a positive integer between 1 and 1,000,000 (`MAX_QUANTITY`). Non-integers, zeros, and negative numbers are rejected with HTTP 400.
+  - **Duplicate Product Rejection**: Submitting duplicate products within `items[]` is rejected with HTTP 400 (`DUPLICATE_QUOTE_PRODUCT`).
+  - **Catalog Validation**: Product IDs are validated via `productsService.validateForQuote()`. Products must exist, be in `PUBLISHED` status, and not soft-deleted. Non-existent products return 400 (`QUOTE_PRODUCT_NOT_FOUND`), while draft or inactive products return 400 (`QUOTE_PRODUCT_UNAVAILABLE`).
+  - **Frozen Snapshotting**: Each line item records a frozen snapshot of the product's canonical `productName` and `sku`, along with relational reference `productIdRef`.
+  - **Atomic Transaction**: The entire enquiry and its line items are created inside a database transaction (`prisma.$transaction`). If any product fails validation, no records or line items are persisted.
+- **Legacy `lineItems` Backwards Compatibility**:
+  - Legacy payloads providing `lineItems: [{ productId, sku, productName, quantity }]` continue to be supported.
+  - Legacy submissions preserve custom/external string `productId` values and explicitly assign `productIdRef: null`. They do not create direct foreign key references without product validation, preventing database FK constraint errors (500) on legacy data.
 
 ## Tests
 
