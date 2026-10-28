@@ -13,6 +13,7 @@ import {
   type CreateCategoryBody,
   type ListCategoriesQuery,
   type PublicCategoryDto,
+  type ReorderCategoriesBody,
   type UpdateCategoryBody,
 } from './categories.schema';
 
@@ -41,6 +42,7 @@ export function toCategoryDto(record: CategoryRecord): CategoryDto {
     imageMediaId: record.imageMediaId ?? null,
     bannerUrl: record.bannerUrl ?? null,
     bannerMediaId: record.bannerMediaId ?? null,
+    icon: record.icon ?? null,
     description: record.description,
     isActive: record.isActive,
     sortOrder: record.sortOrder,
@@ -58,6 +60,7 @@ export function toPublicCategoryDto(record: CategoryRecord): PublicCategoryDto {
     slug: record.slug,
     imageUrl: record.imageUrl ?? null,
     bannerUrl: record.bannerUrl ?? null,
+    icon: record.icon ?? null,
     description: record.description,
     parentId: record.parentId,
   };
@@ -221,6 +224,15 @@ export const categoriesService = {
     } catch (err) {
       handleCategoryUniqueError(err);
     }
+  },
+
+  async reorder(body: ReorderCategoriesBody, actorId: string): Promise<CategoryDto[]> {
+    const existing = await categoriesRepository.findByIds(body.categoryIds);
+    if (existing.length !== body.categoryIds.length) {
+      throw AppError.notFound('Category');
+    }
+    const updated = await categoriesRepository.reorder(body.categoryIds, actorId);
+    return updated.map(toCategoryDto);
   },
 
   async assertAssignable(

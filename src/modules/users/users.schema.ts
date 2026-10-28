@@ -11,7 +11,7 @@ export const UsersErrorCode = {
 } as const;
 
 /** Roles a Super Admin can create through the API. Super Admins are created with `npm run db:seed`. */
-export const MANAGEABLE_ROLES = [Role.SALES_MANAGER] as const;
+export const MANAGEABLE_ROLES = [Role.SALES_MANAGER, Role.CRM_USER] as const;
 
 const emailSchema = z.email().max(254).trim().toLowerCase();
 const nameSchema = z.string().trim().min(2).max(100);

@@ -42,6 +42,10 @@ export const Permission = {
   HOMEPAGE_CREATE: 'homepage:create',
   HOMEPAGE_UPDATE: 'homepage:update',
   HOMEPAGE_DELETE: 'homepage:delete',
+  INDUSTRIAL_CAPABILITIES_READ: 'industrial-capabilities:read',
+  INDUSTRIAL_CAPABILITIES_CREATE: 'industrial-capabilities:create',
+  INDUSTRIAL_CAPABILITIES_UPDATE: 'industrial-capabilities:update',
+  INDUSTRIAL_CAPABILITIES_DELETE: 'industrial-capabilities:delete',
   // @generator:permissions (new module permissions are inserted above this line)
 } as const;
 
@@ -81,7 +85,12 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     Permission.CONTACTS_UPDATE,
     Permission.NOTIFICATIONS_READ,
     Permission.HOMEPAGE_READ,
+    Permission.INDUSTRIAL_CAPABILITIES_READ,
+    Permission.INDUSTRIAL_CAPABILITIES_CREATE,
+    Permission.INDUSTRIAL_CAPABILITIES_UPDATE,
+    Permission.INDUSTRIAL_CAPABILITIES_DELETE,
   ],
+  [Role.CRM_USER]: [Permission.ENQUIRIES_READ, Permission.ENQUIRIES_UPDATE, Permission.ENQUIRIES_FOLLOW_UP],
 };
 
 const permissionSets = new Map<Role, ReadonlySet<Permission>>(

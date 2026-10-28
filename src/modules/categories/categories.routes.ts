@@ -12,6 +12,7 @@ categoriesRouter.use(authenticate());
 
 categoriesRouter.get('/', authorize(Permission.CATEGORIES_READ), categoriesController.list);
 categoriesRouter.post('/', authorize(Permission.CATEGORIES_CREATE), categoriesController.create);
+categoriesRouter.patch('/reorder', authorize(Permission.CATEGORIES_UPDATE), categoriesController.reorder);
 categoriesRouter.get('/:id', authorize(Permission.CATEGORIES_READ), categoriesController.getById);
 categoriesRouter.patch('/:id', authorize(Permission.CATEGORIES_UPDATE), categoriesController.update);
 categoriesRouter.delete('/:id', authorize(Permission.CATEGORIES_DELETE), categoriesController.remove);

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { paginationQuerySchema, sortOrderSchema } from '../../shared/http';
+import { iconSchema } from '../../shared/validators/icon';
 
 export const CategoriesErrorCode = {
   NAME_TAKEN: 'CATEGORIES_NAME_TAKEN',
@@ -13,6 +14,7 @@ export const CategoriesErrorCode = {
   HAS_PRODUCTS: 'CATEGORIES_HAS_PRODUCTS',
   IMAGE_NOT_FOUND: 'CATEGORY_IMAGE_NOT_FOUND',
   BANNER_NOT_FOUND: 'CATEGORY_BANNER_NOT_FOUND',
+  INVALID_ICON: 'INVALID_CATEGORY_ICON',
 } as const;
 
 export type CategoriesErrorCode = (typeof CategoriesErrorCode)[keyof typeof CategoriesErrorCode];
@@ -40,6 +42,7 @@ export const categorySchema = z
     imageMediaId: z.uuid().nullable().optional(),
     bannerUrl: z.string().nullable(),
     bannerMediaId: z.uuid().nullable().optional(),
+    icon: z.string().nullable().optional(),
     description: z.string().nullable(),
     isActive: z.boolean(),
     sortOrder: z.number().int(),
@@ -49,7 +52,7 @@ export const categorySchema = z
   })
   .meta({ id: 'Category' });
 
-/** Public website DTO: excludes internal audit fields. */
+/** Public website DTO: excludes internal audit fields and sortOrder per current DTO policy. */
 export const publicCategorySchema = z
   .object({
     id: z.uuid(),
@@ -57,6 +60,7 @@ export const publicCategorySchema = z
     slug: z.string(),
     imageUrl: z.string().nullable().optional(),
     bannerUrl: z.string().nullable(),
+    icon: z.string().nullable().optional(),
     description: z.string().nullable(),
     parentId: z.uuid().nullable(),
   })
@@ -79,6 +83,7 @@ export const createCategoryBodySchema = z
     slug: categorySlugSchema,
     imageUrl: mediaUrlSchema,
     bannerUrl: mediaUrlSchema,
+    icon: iconSchema.nullable().optional(),
     description: z
       .string()
       .trim()
@@ -107,6 +112,7 @@ export const updateCategoryBodySchema = z
     slug: categorySlugSchema.optional(),
     imageUrl: mediaUrlSchema,
     bannerUrl: mediaUrlSchema,
+    icon: iconSchema.nullable().optional(),
     description: z
       .string()
       .trim()
@@ -124,6 +130,15 @@ export const updateCategoryBodySchema = z
   .refine((body) => Object.keys(body).length > 0, 'Provide at least one field to update')
   .meta({ id: 'UpdateCategoryRequest' });
 
+export const reorderCategoriesBodySchema = z
+  .object({
+    categoryIds: z
+      .array(z.string().uuid('Each categoryId must be a valid UUID'))
+      .min(1, 'Provide at least one category ID to reorder')
+      .refine((ids) => new Set(ids).size === ids.length, 'categoryIds must not contain duplicates'),
+  })
+  .meta({ id: 'ReorderCategoriesRequest' });
+
 export const listCategoriesQuerySchema = paginationQuerySchema.extend({
   search: z.string().trim().min(1).max(100).optional().meta({ description: 'Matches category name or slug' }),
   isActive: z
@@ -140,4 +155,5 @@ export type CategoryDto = z.infer<typeof categorySchema>;
 export type PublicCategoryDto = z.infer<typeof publicCategorySchema>;
 export type CreateCategoryBody = z.infer<typeof createCategoryBodySchema>;
 export type UpdateCategoryBody = z.infer<typeof updateCategoryBodySchema>;
+export type ReorderCategoriesBody = z.infer<typeof reorderCategoriesBodySchema>;
 export type ListCategoriesQuery = z.infer<typeof listCategoriesQuerySchema>;

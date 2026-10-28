@@ -15,6 +15,7 @@ describe('categoriesService.softDelete (unit)', () => {
     imageMediaId: null,
     bannerUrl: null,
     bannerMediaId: null,
+    icon: null,
     description: null,
     isActive: true,
     sortOrder: 0,

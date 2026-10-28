@@ -58,13 +58,21 @@ function buildWhere(query: ListEnquiriesQuery): Prisma.EnquiryWhereInput {
   return where;
 }
 
+export interface EnquiryCreateLineItemData {
+  productId: string;
+  productIdRef?: string | null;
+  sku: string;
+  productName?: string | null;
+  quantity: number;
+}
+
 export const enquiriesRepository = {
   /** Creates the enquiry, its line items and the initial status entry atomically. */
   create(
-    input: SubmitEnquiryBody,
+    fields: Omit<SubmitEnquiryBody, 'items' | 'lineItems'>,
+    lineItems: EnquiryCreateLineItemData[],
     sourceIp: string | undefined
   ): Promise<{ id: string; status: EnquiryStatus; createdAt: Date }> {
-    const { lineItems, ...fields } = input;
     return prisma.enquiry.create({
       data: {
         ...fields,

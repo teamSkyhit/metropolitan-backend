@@ -221,6 +221,7 @@ describe('BE-3.5 Security Polish & Hardening', () => {
         '/public/contacts',
         '/public/contact',
         '/public/homepage',
+        '/public/industrial-capabilities',
       ];
 
       for (const pubPath of publicPaths) {

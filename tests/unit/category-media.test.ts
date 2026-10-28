@@ -16,6 +16,7 @@ describe('Category Media Service (unit)', () => {
     imageMediaId: null,
     bannerUrl: null,
     bannerMediaId: null,
+    icon: null,
     isActive: true,
     sortOrder: 0,
     parentId: null,

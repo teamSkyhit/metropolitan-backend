@@ -146,6 +146,7 @@ export const categoriesRepository = {
         slug: data.slug,
         imageUrl: data.imageUrl ?? null,
         bannerUrl: data.bannerUrl ?? null,
+        icon: data.icon ?? null,
         description: data.description ?? null,
         isActive: data.isActive,
         sortOrder: data.sortOrder,
@@ -166,12 +167,28 @@ export const categoriesRepository = {
         ...(data.slug !== undefined && { slug: data.slug }),
         ...(data.imageUrl !== undefined && { imageUrl: data.imageUrl }),
         ...(data.bannerUrl !== undefined && { bannerUrl: data.bannerUrl }),
+        ...(data.icon !== undefined && { icon: data.icon }),
         ...(data.description !== undefined && { description: data.description }),
         ...(data.isActive !== undefined && { isActive: data.isActive }),
         ...(data.sortOrder !== undefined && { sortOrder: data.sortOrder }),
         ...(data.parentId !== undefined && { parentId: data.parentId }),
         ...updatedBy(actorId),
       },
+    });
+  },
+
+  async reorder(categoryIds: string[], actorId: string): Promise<Category[]> {
+    return prisma.$transaction(async (tx) => {
+      const updates = categoryIds.map((id, index) =>
+        tx.category.update({
+          where: { id },
+          data: {
+            sortOrder: index,
+            ...updatedBy(actorId),
+          },
+        })
+      );
+      return Promise.all(updates);
     });
   },
 

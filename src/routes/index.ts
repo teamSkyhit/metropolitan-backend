@@ -18,6 +18,10 @@ import {
 } from '../modules/notifications';
 import { productsModule, productsService, registerProductAssignValidation } from '../modules/products';
 import { homepageModule, homepageService } from '../modules/homepage';
+import {
+  industrialCapabilitiesModule,
+  industrialCapabilitiesService,
+} from '../modules/industrial-capabilities';
 import type { AppModule } from '../shared/module';
 
 /**
@@ -37,6 +41,7 @@ export const modules: readonly AppModule[] = [
   contactsModule,
   notificationsModule,
   homepageModule,
+  industrialCapabilitiesModule,
   // @generator:modules
 ];
 
@@ -54,6 +59,10 @@ registerMediaReferenceCheckers([
   { name: 'Brand', checker: (url) => brandsService.isMediaUrlReferenced(url) },
   { name: 'Category', checker: (url, id) => categoriesService.isMediaUrlReferenced(url, id) },
   { name: 'HomepageSection', checker: (url, id) => homepageService.isMediaUrlReferenced(url, id) },
+  {
+    name: 'IndustrialCapability',
+    checker: (url, id) => industrialCapabilitiesService.isMediaUrlReferenced(url, id),
+  },
 ]);
 
 // Notification delivery & recipient wiring (composition root)
@@ -84,7 +93,13 @@ export function configureContactNotifications(options?: {
   }
 }
 
-const CATALOG_BASE_PATHS = new Set(['/brands', '/categories', '/products', '/homepage']);
+const CATALOG_BASE_PATHS = new Set([
+  '/brands',
+  '/categories',
+  '/products',
+  '/homepage',
+  '/industrial-capabilities',
+]);
 
 /** Builds the /api/v1 router from the module list. */
 export function createApiRouter(): Router {

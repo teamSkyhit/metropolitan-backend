@@ -5,6 +5,7 @@
 export const Role = {
   SUPER_ADMIN: 'SUPER_ADMIN',
   SALES_MANAGER: 'SALES_MANAGER',
+  CRM_USER: 'CRM_USER',
 } as const;
 
 export type Role = (typeof Role)[keyof typeof Role];

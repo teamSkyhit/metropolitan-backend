@@ -14,6 +14,7 @@ import {
   listCategoriesQuerySchema,
   publicCategorySchema,
   publicCategorySlugParamsSchema,
+  reorderCategoriesBodySchema,
   updateCategoryBodySchema,
 } from './categories.schema';
 
@@ -82,6 +83,20 @@ export function registerCategoriesDocs(registry: OpenAPIRegistry): void {
     responses: {
       200: jsonResponse('Paginated categories', paginatedBody(categorySchema)),
       ...errorResponses(400, 401, 403),
+    },
+  });
+
+  registry.registerPath({
+    method: 'patch',
+    path: '/categories/reorder',
+    tags: adminTags,
+    security,
+    summary: 'Reorder categories',
+    description: 'Requires `categories:update`. Updates category sort order atomically.',
+    request: { body: json(reorderCategoriesBodySchema) },
+    responses: {
+      200: jsonResponse('Categories reordered', successBody(z.array(categorySchema))),
+      ...errorResponses(400, 401, 403, 404),
     },
   });
 
