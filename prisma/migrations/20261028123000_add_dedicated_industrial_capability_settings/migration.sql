@@ -1,11 +1,11 @@
 -- CreateTable
 CREATE TABLE "industrial_capability_settings" (
-    "id" UUID NOT NULL DEFAULT gen_random_uuid(),
+    "id" UUID NOT NULL,
     "eyebrow" VARCHAR(100) DEFAULT 'OUR INDUSTRIAL CAPABILITIES',
     "title" VARCHAR(200) DEFAULT 'SIX CORE SEGMENTS',
     "description" VARCHAR(1000) DEFAULT '',
     "created_at" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updated_at" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMPTZ(3) NOT NULL,
     "created_by_id" UUID,
     "updated_by_id" UUID,
 
