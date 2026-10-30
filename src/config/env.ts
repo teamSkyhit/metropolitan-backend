@@ -176,20 +176,6 @@ const envSchema = z
         message: 'PUBLIC_CORS_ORIGINS is required outside local',
       });
     }
-    if (env.CAPTCHA_PROVIDER === 'none') {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['CAPTCHA_PROVIDER'],
-        message: 'A captcha provider is required outside local',
-      });
-    }
-    if (env.CAPTCHA_ALLOWED_HOSTNAMES.length === 0) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['CAPTCHA_ALLOWED_HOSTNAMES'],
-        message: 'CAPTCHA_ALLOWED_HOSTNAMES is required outside local',
-      });
-    }
   });
 
 export type AppConfig = z.infer<typeof envSchema> & {
