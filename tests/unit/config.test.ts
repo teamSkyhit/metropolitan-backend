@@ -38,10 +38,15 @@ describe('loadConfig', () => {
     expect(() => loadConfig({ ...base, APP_ENV: 'staging', CORS_ORIGINS: '*' })).toThrow(/must not contain/);
   });
 
-  it('requires a captcha provider in production', () => {
-    expect(() =>
-      loadConfig({ ...base, APP_ENV: 'production', CORS_ORIGINS: 'https://crm.example.com' })
-    ).toThrow(/captcha provider is required/);
+  it('allows captcha provider to be none outside local', () => {
+    const config = loadConfig({
+      ...base,
+      APP_ENV: 'production',
+      CORS_ORIGINS: 'https://crm.example.com',
+      PUBLIC_CORS_ORIGINS: 'https://www.example.com',
+    });
+
+    expect(config.CAPTCHA_PROVIDER).toBe('none');
   });
 
   it('requires allowed hostnames when a captcha provider is configured', () => {
