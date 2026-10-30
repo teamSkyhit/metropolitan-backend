@@ -44,8 +44,8 @@ describe('loadConfig', () => {
     ).toThrow(/captcha provider is required/);
   });
 
-  it('requires a captcha secret when a provider is configured', () => {
-    expect(() => loadConfig({ ...base, CAPTCHA_PROVIDER: 'turnstile' })).toThrow(/CAPTCHA_SECRET_KEY/);
+  it('requires allowed hostnames when a captcha provider is configured', () => {
+    expect(() => loadConfig({ ...base, CAPTCHA_PROVIDER: 'turnstile' })).toThrow(/CAPTCHA_ALLOWED_HOSTNAMES/);
   });
 
   it('disables API docs in production even if API_DOCS_ENABLED=true', () => {
