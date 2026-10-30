@@ -89,11 +89,11 @@ const envSchema = z
     S3_SECRET_ACCESS_KEY: z.string().optional(),
   })
   .superRefine((env, ctx) => {
-    if (env.CAPTCHA_PROVIDER !== 'none' && !env.CAPTCHA_SECRET_KEY) {
+    if (env.CAPTCHA_PROVIDER !== 'none' && env.CAPTCHA_ALLOWED_HOSTNAMES.length === 0) {
       ctx.addIssue({
         code: 'custom',
-        path: ['CAPTCHA_SECRET_KEY'],
-        message: 'CAPTCHA_SECRET_KEY is required when CAPTCHA_PROVIDER is set',
+        path: ['CAPTCHA_ALLOWED_HOSTNAMES'],
+        message: 'CAPTCHA_ALLOWED_HOSTNAMES is required when captcha is enabled',
       });
     }
 
