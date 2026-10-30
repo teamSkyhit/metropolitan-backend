@@ -504,13 +504,17 @@ describe('public endpoint protection', () => {
   }
 
   it('requires a valid captcha token when a provider is configured', async () => {
-    const agent = await freshApp({ CAPTCHA_PROVIDER: 'turnstile', CAPTCHA_SECRET_KEY: 'secret' });
+    const agent = await freshApp({
+      CAPTCHA_PROVIDER: 'turnstile',
+      CAPTCHA_SECRET_KEY: 'secret',
+      CAPTCHA_ALLOWED_HOSTNAMES: 'example.com',
+    });
 
     const missing = await agent.post('/api/v1/public/enquiries').send(validEnquiry).expect(400);
     expect(missing.body.error.code).toBe('CAPTCHA_REQUIRED');
 
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify({ success: true, action: 'enquiry_submit' }))
+      new Response(JSON.stringify({ success: true, action: 'enquiry_submit', hostname: 'example.com' }))
     );
     await agent
       .post('/api/v1/public/enquiries')
