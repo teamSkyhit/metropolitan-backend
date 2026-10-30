@@ -176,14 +176,14 @@ const envSchema = z
         message: 'PUBLIC_CORS_ORIGINS is required outside local',
       });
     }
-    if (env.CAPTCHA_PROVIDER === 'none') {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['CAPTCHA_PROVIDER'],
-        message: 'A captcha provider is required outside local',
-      });
-    }
-    if (env.CAPTCHA_ALLOWED_HOSTNAMES.length === 0) {
+    // if (env.CAPTCHA_PROVIDER === 'none') {
+    //   ctx.addIssue({
+    //     code: 'custom',
+    //     path: ['CAPTCHA_PROVIDER'],
+    //     message: 'A captcha provider is required outside local',
+    //   });
+    // }
+    if (env.CAPTCHA_PROVIDER !== 'none' && env.CAPTCHA_ALLOWED_HOSTNAMES.length === 0) {
       ctx.addIssue({
         code: 'custom',
         path: ['CAPTCHA_ALLOWED_HOSTNAMES'],
