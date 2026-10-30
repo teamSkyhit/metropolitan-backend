@@ -165,6 +165,9 @@ describe('captcha', () => {
   async function captchaApp(provider: string) {
     vi.stubEnv('CAPTCHA_PROVIDER', provider);
     vi.stubEnv('CAPTCHA_SECRET_KEY', 'test-secret');
+    if (provider !== 'none') {
+      vi.stubEnv('CAPTCHA_ALLOWED_HOSTNAMES', 'example.com');
+    }
     vi.resetModules();
     const { requireCaptcha, errorHandler: handler } = await import('../../src/middleware');
     const app = express();
@@ -176,7 +179,9 @@ describe('captcha', () => {
   }
 
   function mockProvider(body: object, status = 200) {
-    return vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify(body), { status }));
+    return vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(JSON.stringify({ hostname: 'example.com', ...body }), { status }));
   }
 
   it('skips verification when the provider is none', async () => {
